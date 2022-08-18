@@ -1,2 +1,3 @@
 outputs/
 *.svg
+__pycache__
