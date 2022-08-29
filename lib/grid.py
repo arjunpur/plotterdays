@@ -62,6 +62,9 @@ class Vector:
         return cls(np_array[0], np_array[1])
 
 # TODO: Understand how vector rotation actually works mathematically
+# TODO: Use shapely to perform the affine transformation. There's not
+# need for me to do this with numpy directly. I'm unnecessarily using
+# the Vector abstraction
 def rotate_vector(
     vec: Vector,
     theta: float,
@@ -117,6 +120,7 @@ class Grid:
         cell_x = self.top_left.x + (col * width)
         cell_y = self.top_left.y + (row * height)
         return Cell(Point(cell_x, cell_y), width, height)
+
 
     def get_vector(self, x: float, y: float) -> Vector:
         return Vector(

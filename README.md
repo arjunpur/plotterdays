@@ -88,3 +88,17 @@ export PYTHONPATH="$HOME/Projects/:$PYTHONPATH"
 ### Resources
 
 - AxiDraw user guide: https://cdn.evilmadscientist.com/dl/ad/public/AxiDraw_Guide_v550.pdf
+
+
+### dependencies
+
+For rendering LaTex to SVGs:
+- Latex (Tex Live for Ubuntu) (`sudo apt update && sudo apt install texlive`)
+- LuaTex
+
+- vsketch
+- vpype
+- Inkscape (?)
+- axicli
+
+- Python3.10+
