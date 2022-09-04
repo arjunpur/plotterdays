@@ -1,16 +1,15 @@
 from plotterdays.lib.grid import Grid, Vector, draw_grid, draw_grid_border, rotate_vector, normalize
 from plotterdays.lib.constants.page_sizes import LETTER_SIZE_DIMENSIONS_IMPERIAL
 
+import latextools
 import numpy as np
 import vsketch
 from typing import Optional, Tuple
 from enum import Enum
 from shapely.geometry import Point
 import vpype
-from io import StringIO
-import matplotlib.pyplot as plt
-plt.rcParams['text.usetex'] = True
-
+from io import StringIO, BytesIO, TextIOWrapper
+# import matplotlib.pyplot as plt
 
 class VectorBasics(vsketch.SketchClass):
     # Sketch parameters:
@@ -137,12 +136,19 @@ def draw_vector_at(
             end_point.y + scaled_other_side.y
         )
     if draw_text is not None:
-        pass
         # Part 1
         # Generate the Latex SVG
 
-        vector_repr_svg = tex2svg(r'E=mc^2')
-        vpype_text, _, _ = vpype.read_svg(vector_repr_svg, 0.001)
+        # vector_repr_svg = tex2svg(r'E=mc^2')
+        pad = '0.0in' 
+        vector_str = r'''
+        $
+        \begin{bmatrix}
+        1 \\
+        2 \\
+        \end{bmatrix}
+        $'''.strip()
+        vector_repr_svg = latex2svg(vector_str, pad = pad)
 
         # Part 2
         # Position it / scale it to the grid / vector / units
@@ -150,34 +156,55 @@ def draw_vector_at(
         # Sketch the shape using vsketch
         # The text should only be the size of two cells
 
-        scale_factor = (starting_cell.height * 2.0) / vpype_text.height()
-        vpype_text.scale(scale_factor)
+        vpype_text, _, _ = vpype.read_svg(
+            vector_repr_svg,
+            0.001,
+            simplify = True,
+        )
+        # scale_factor = (starting_cell.height * 1.0) / vpype_text.height()
+        # vpype_text.scale(scale_factor)
         vpype_text.translate(starting_cell.left, starting_cell.top)
         shapely_text = vpype_text.as_mls()
         vsk.geometry(shapely_text)
 
+        bounding_box = vpype_text.bounds()
+        if bounding_box:
+            vsk.rect(bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3])
 
-def tex2svg(formula: str, fontsize: int = 20, dpi: int = 300) -> StringIO:
-    """Render TeX formula to SVG.
-    Args:
-        formula (str): TeX formula.
-        fontsize (int, optional): Font size.
-        dpi (int, optional): DPI.
-    Returns:
-        str: SVG render.
-    """
 
-    fig = plt.figure(figsize=(0.01, 0.01))
-    fig.text(0, 0, r'${}$'.format(formula), fontsize=fontsize)
+def latex2svg(formula: str, pad: int = 0) -> TextIOWrapper:
+    pdf = latextools.render_snippet(
+        formula,
+        commands=[latextools.cmd.all_math],
+        pad = pad 
+    )
+    svg_eq = pdf.as_svg().content
+    with open('latex2svg.svg', 'w+') as f:
+        f.write(svg_eq)
+    return StringIO(svg_eq)
 
-    output = StringIO()
-    fig.savefig(output, dpi=dpi, transparent=True, format='svg',
-                bbox_inches='tight', pad_inches=0.0, frameon=False)
-    plt.close(fig)
 
-    output.seek(0)
-    return output
+# def tex2svg(formula: str, fontsize: int = 30, dpi: int = 300) -> TextIOWrapper:
+#     """Render TeX formula to SVG.
+#     Args:
+#         formula (str): TeX formula.
+#         fontsize (int, optional): Font size.
+#         dpi (int, optional): DPI.
+#     Returns:
+#         str: SVG render.
+#     """
 
+#     fig = plt.figure(figsize=(0.01, 0.01), frameon=False)
+#     fig.text(0, 0, r'${}$'.format(formula), fontsize=fontsize)
+
+#     output = BytesIO()
+#     with open('test.svg', 'w+') as f:
+#         fig.savefig(f, dpi=dpi, transparent=True, format='svg',
+#                     bbox_inches='tight', pad_inches=0.0, frameon=False)
+#         plt.close(fig)
+
+#     output.seek(0)
+#     return TextIOWrapper(output)
 
 if __name__ == "__main__":
     VectorBasics.display()

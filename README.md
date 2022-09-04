@@ -80,6 +80,10 @@ export PYTHONPATH="$HOME/Projects/:$PYTHONPATH"
 
 - Make sure you set `MYPYPATH` to your project directory so that it can find your modules
 
+- For `pyright`, use the `pyenv-pyright` plugin: https://github.com/alefpereira/pyenv-pyright
+
+- Sometimes you'll need to use other packages with vsketch scripts. To do this, you need to `inject` the packages into the `pipx` virtualenv: `pipx inject vsketch latextools`
+
 #### Upgrading Python Version
 - https://stackoverflow.com/questions/44692668/python-how-can-i-update-python-version-in-pyenv-virtual-environment
 - When doing this, you'll need to manually install the axidrawcli: https://axidraw.com/doc/cli_api/#introduction. Some versions will collide so remove the axidraw dependencies from the requirements.txt, install everything, and then install axidraw.
