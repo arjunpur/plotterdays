@@ -56,6 +56,15 @@ class Vector:
     def to_numpy_array(self) -> np.ndarray:
         return np.array([self.x, self.y])
 
+    def to_latex(self) -> str:
+        vector_str = r'''$
+            \begin{{bmatrix}}
+                {x} \\
+                {y} \\
+            \end{{bmatrix}}
+        $'''.format(x = self.x, y = self.y).strip()
+        return vector_str
+
     @classmethod
     def from_numpy_array(cls, np_array: np.ndarray) -> Vector:
         assert(np_array.shape == (2,))

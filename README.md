@@ -84,6 +84,8 @@ export PYTHONPATH="$HOME/Projects/:$PYTHONPATH"
 
 - Sometimes you'll need to use other packages with vsketch scripts. To do this, you need to `inject` the packages into the `pipx` virtualenv: `pipx inject vsketch latextools`
 
+- In order to ensure nvim's mypy can resolve library code installed by `pipx`, you have to update the `extraPaths` setting in the Python LSP configuration.
+
 #### Upgrading Python Version
 - https://stackoverflow.com/questions/44692668/python-how-can-i-update-python-version-in-pyenv-virtual-environment
 - When doing this, you'll need to manually install the axidrawcli: https://axidraw.com/doc/cli_api/#introduction. Some versions will collide so remove the axidraw dependencies from the requirements.txt, install everything, and then install axidraw.
