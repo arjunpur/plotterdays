@@ -2,11 +2,11 @@ import vsketch
 import random
 import numpy as np
 from typing import Sequence
-from plotterdays.lib.constants.page_sizes import LETTER_SIZE_DIMENSIONS_METRIC
+from lib.constants.page_sizes import LETTER_SIZE_DIMENSIONS_METRIC
 from shapely.geometry import LineString, Point
 from shapely.affinity import scale
-from plotterdays.lib.grid import Grid
-from plotterdays.lib.spiral import Spiral
+from lib.grid import Grid
+from lib.spiral import Spiral
 
 
 class SpiralsSketch(vsketch.SketchClass):

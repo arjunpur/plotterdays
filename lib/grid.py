@@ -1,8 +1,7 @@
-from __future__ import annotations
-import numpy as np
+from typing import Tuple
+from lib.constants.page_sizes import LETTER_SIZE_DIMENSIONS_IMPERIAL, LETTER_SIZE_DIMENSIONS_METRIC
 import vsketch
-from math import cos, sin
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point
 
 class Cell:
     def __init__(self, position: Point, width: float, height: float):
@@ -34,69 +33,9 @@ class Cell:
         center_y = (self.top + self.bottom) / 2.0
         return Point(center_x, center_y)
 
-
-# TODO currently we proxy back and forth between numpy arrays
-# I might be able to just remove this abstraction to simplify the code
-# Or just use numpy arrays under the hood
-class Vector:
-    def __init__(self, x: float, y: float):
-        self.x = x
-        self.y = y
-
-    # https://stackoverflow.com/questions/44640479/type-annotation-for-classmethod-returning-instance
-    @classmethod
-    def from_line_string(cls, linestring: LineString) -> Vector:
-        # TODO
-        return cls(0.0, 0.0)
-
-    def to_line_string(self, start_point: Point) -> LineString:
-        end_point = Point(start_point.x + self.x, start_point.y + self.y)
-        return LineString([start_point, end_point])
-
-    def to_numpy_array(self) -> np.ndarray:
-        return np.array([self.x, self.y])
-
-    def to_latex(self) -> str:
-        vector_str = r'''$
-            \begin{{bmatrix}}
-                {x} \\
-                {y} \\
-            \end{{bmatrix}}
-        $'''.format(x = self.x, y = self.y).strip()
-        return vector_str
-
-    @classmethod
-    def from_numpy_array(cls, np_array: np.ndarray) -> Vector:
-        assert(np_array.shape == (2,))
-        return cls(np_array[0], np_array[1])
-
-# TODO: Understand how vector rotation actually works mathematically
-# TODO: Use shapely to perform the affine transformation. There's not
-# need for me to do this with numpy directly. I'm unnecessarily using
-# the Vector abstraction
-def rotate_vector(
-    vec: Vector,
-    theta: float,
-    degrees: bool = False,
-) -> Vector:
-    angle_radians = theta
-    if degrees:
-        angle_radians = np.radians(theta)
-
-    rot_matrix = np.array([
-        [cos(angle_radians), -sin(angle_radians)],
-        [sin(angle_radians), cos(angle_radians)]
-    ])
-    rotated = np.dot(vec.to_numpy_array(), rot_matrix)
-    return Vector.from_numpy_array(rotated)
-
-
-def normalize(vec: Vector) -> Vector:
-    ndarray = vec.to_numpy_array()
-    norm = np.linalg.norm(ndarray)
-    if norm == 0:
-        raise Exception("could not compute norm of a 0 vector")
-    return Vector.from_numpy_array(ndarray / norm)
+    @property
+    def dimensions(self) -> Tuple:
+        return (self.width, self.height) 
 
 
 class Grid:
@@ -104,7 +43,7 @@ class Grid:
     A Cartesian grid that is agnostic of units. Callers are expected to maintain consistency of
     units when using the grid.
 
-    `position` refers to the Grid's top-left coordinates.
+    `top_left` refers to the Grid's top-left coordinates.
     """
 
     def __init__(
@@ -130,12 +69,9 @@ class Grid:
         cell_y = self.top_left.y + (row * height)
         return Cell(Point(cell_x, cell_y), width, height)
 
-
-    def get_vector(self, x: float, y: float) -> Vector:
-        return Vector(
-            x * self._cell_width,
-            y * self._cell_height,
-        )
+    @property
+    def cell_dimensions(self) -> Tuple:
+        return self.get_cell_at_index(0, 0).dimensions
 
     @property
     def top(self) -> float:
@@ -159,6 +95,35 @@ class Grid:
         center_y = (self.top + self.bottom) / 2.0
         return Point(center_x, center_y)
 
+
+def create_grid_with_padding(padding: float, cell_size: Tuple, use_imperial: bool = True, landscape: bool = True) -> Grid:
+    """
+    Returns a Grid object who's coordinates have been adjusted by `padding`, with cell_size
+    the size of `cell_size`. 
+    The units of measurement (imperial / metric) and the orientation of the page (landscape, potrait) 
+    should be specified.
+    """
+    if use_imperial:
+        dimensions = LETTER_SIZE_DIMENSIONS_IMPERIAL
+    else:
+        dimensions = LETTER_SIZE_DIMENSIONS_METRIC
+    # NOTE: we switch the access of width / height because we're doing landscape
+    if landscape: 
+        grid_width = dimensions[1] - (2 * padding)
+        grid_height = dimensions[0] - (2 * padding)
+    else: 
+        grid_width = dimensions[0] - (2 * padding)
+        grid_height = dimensions[1] - (2 * padding)
+    num_cols = int(round(grid_width / cell_size[1]))
+    num_rows = int(round(grid_height / cell_size[0]))
+    grid = Grid(
+        grid_width,
+        grid_height,
+        Point(padding, padding),
+        num_cols,
+        num_rows,
+    )
+    return grid
 
 def draw_grid(vsk: vsketch.Vsketch, grid: Grid) -> None:
     draw_grid_border(vsk, grid)
