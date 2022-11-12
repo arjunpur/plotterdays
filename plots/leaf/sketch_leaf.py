@@ -1,24 +1,20 @@
-import random
 import bezier
+from lib.shapely import generate_random_points_in_polygon
 import vsketch
 import numpy as np
-from typing import Sequence, Optional 
-from lib.grid import create_grid_with_padding, draw_grid
-from lib.vector import Vector
+from typing import Sequence, Optional, Tuple 
+from lib.grid import Grid, create_grid_with_padding, draw_grid
+from lib.vector import Vector, draw_vector
 from shapely.geometry import LineString, Point, Polygon
 
 
 # Next Steps
-# - Abstract away a Bezier curve and a leaf using this package: https://bezier.readthedocs.io/en/stable/python/reference/bezier.curve.html
-# - Using the abstraction of the Bezier curve, use the `evaluate_multi(s)` function to get the corresponding
-#   points on the curve. Use this to determine the distance between the curve and the center vein of the leaf.
-#   That value will be used to scale the leaf vein.
-# - Recursively generate sub-veins
+# - Use the builder pattern for constructing the leaf (width, length, orientation, num_veins, vein strategy, sub-vein strategy, etc.)
+# - Recursively generate sub-veins: https://natureofcode.com/book/chapter-8-fractals/
 # - Add randomness to the shape of the center vein, the direction of the veins, the outer shape of the leaf
 # - I might want to use the intersection function to actually find the point on the curve. I might just be able to use `evaluate_multi` though
 
 class LeafSketch(vsketch.SketchClass):
-
     leaf_length = vsketch.Param(3.0)
     leaf_width = vsketch.Param(2.0)
     num_veins = vsketch.Param(5)
@@ -34,12 +30,16 @@ class LeafSketch(vsketch.SketchClass):
         # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
         # draw_leaf(vsk, leaf)
 
-
         # leaf_base = grid.get_cell_at_index(5, 8).center
         # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
         # draw_leaf(vsk, leaf)
+    
+        vsk.strokeWeight(3)
+        leaf_base = grid.get_cell_at_index(14, 8).center
+        leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        draw_leaf(vsk, leaf)
 
-
+    def draw_branch(self, grid: Grid, vsk: vsketch.Vsketch) -> None:
         branch_start = grid.get_cell_at_index(10, 3).center
         branch_end = grid.get_cell_at_index(10, 18).center
         
@@ -56,11 +56,82 @@ class LeafSketch(vsketch.SketchClass):
         vsk.line(branch_start.x, branch_start.y, branch_end.x, branch_end.y)
 
 
-        # TODO: Introduce some randomness here
-
-
     def finalize(self, vsk: vsketch.Vsketch) -> None:
         vsk.vpype("linemerge linesimplify reloop linesort")
+
+
+class Vein():
+
+    def __init__(self, vein_start: Point, vein_end: Point, vein_trajectory: Vector):
+        vein_line = LineString([vein_start, vein_end])
+        self.vein = create_curve_with_light_bend(
+            (vein_start, vein_end),
+            vein_trajectory,
+            (0.25, 0.75),
+            vein_line.length * 0.2,
+            vein_line.length * 0.1,
+            vein_line.length * 0.1
+        )
+        
+        self._create_sub_veins()
+
+    def _create_sub_veins(self): 
+        parameters = np.asarray([0.2, 0.4, 0.7, 0.9])
+        for s in parameters:
+            points = self.vein.evaluate_multi(parameters)
+            print("--------------")
+            print(points)
+            print(points.shape)
+            print("--------------")
+
+        # TODO: Rotate the vein_trajectory to aim the sub_vein + add some randomness
+        # TODO: Iterate through these sub_vein starting points and re-call the light bend curve
+
+
+def create_curve_with_light_bend(
+        start_end: Tuple[Point, Point],
+        trajectory: Vector,
+        control_point_locations: Tuple[float, float],
+        trunk_width: float,
+        tip_width: float,
+        control_point_precision: float,
+    ) -> bezier.Curve:
+    """
+    Creates a curve that bends slightly.
+
+    start_end: Where the curve starts and where it ends
+    trajectory: What direction the curve is oriented towards
+    control_point_locations: The points along the `trajectory` where we branch out to drop control points
+    trunk_width: How far we branch out for the first control point
+    tip_width: How far we branch out for the second control point
+    control_point_precision: How random / precise our control point selection is - control points are chosen at random from within 
+    a circle
+    """
+
+    start, end = start_end
+
+    left_or_right = trajectory.x < 0
+    first_point = between_two_points(start, end, control_point_locations[0]) 
+    perpendicular = trajectory.get_perpendicular(clockwise = left_or_right).get_unit_vector()
+    control_point_1_boundary = add(first_point, perpendicular * trunk_width)
+    control_point_1_buffer = control_point_1_boundary.buffer(control_point_precision)
+
+    second_point = between_two_points(start, end, control_point_locations[1]) 
+    perpendicular = trajectory.get_perpendicular(clockwise = left_or_right).get_unit_vector()
+    control_point_2_boundary = add(second_point, perpendicular * tip_width)
+    control_point_2_buffer = control_point_2_boundary.buffer(control_point_precision)
+
+    control_point_1 = generate_random_points_in_polygon(1, Polygon(control_point_1_buffer))[0] 
+    control_point_2 = generate_random_points_in_polygon(1, Polygon(control_point_2_buffer))[0] 
+
+    nodes = np.asarray([
+        [start.x, control_point_1.x, control_point_2.x, end.x],
+        [start.y, control_point_1.y, control_point_2.y, end.y]
+    ])
+    return bezier.Curve(
+        nodes,
+        degree = 3
+    )
 
 
 class Leaf():
@@ -95,13 +166,15 @@ class Leaf():
         self.width = width
         self.length = length
         self.num_veins = num_veins
-        self.right_side = self._construct_side(self.width, left = False)
-        self.right_vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width, left = False)
-        self.right_veins = self._construct_veins(self.right_vein_boundary, left = False)
 
+        right_vein_trajectory = Vector(1.0, -1.0).get_unit_vector() 
+        self.right_side = self._construct_side(self.width, left = False)
+        self.right_veins = self._construct_veins(right_vein_trajectory)
+
+        left_vein_trajectory = Vector(-1.0, -1.0).get_unit_vector() 
         self.left_side = self._construct_side(self.width)
         self.left_vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width)
-        self.left_veins = self._construct_veins(self.left_vein_boundary)
+        self.left_veins = self._construct_veins(left_vein_trajectory)
 
 
     def _construct_side(self, width: float, left: bool = True) -> bezier.Curve:
@@ -117,7 +190,7 @@ class Leaf():
         return bezier.Curve(nodes, degree = 3)
 
    
-    def _construct_veins(self, vein_boundary: bezier.Curve, left: bool = True) -> Sequence[bezier.Curve]:
+    def _construct_veins(self, vein_trajectory: Vector) -> Sequence[Vein]:
         """
         Constructs a series of veins for a particular side of the leaf. Each vein is modelled as a 
         Bezier curve.
@@ -125,37 +198,15 @@ class Leaf():
         vein_gap = (self.base.y - self.tip.y) / self.num_veins
         veins = []
 
-        # Project vein vector onto the leaf width to get an appropriately sized
-        # vein (i.e fits in the leaf)
-        modifier = -1 if left else 1 
-        vein_trajectory = Vector(1.0 * modifier, -1.0).get_unit_vector() 
-
+        left_or_right = vein_trajectory.x < 0
+        vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width, left = left_or_right)
         for i in range(1, self.num_veins):
             vein_start = Point(self.base.x, self.base.y - vein_gap * i)
             vein_end = self._compute_vein_end(vein_start, vein_trajectory, vein_boundary)
-
-            # Pick two random points within a semi-circle using the start / end as the 
-            # ends of the diameter of the semi-circle
-            # https://shapely.readthedocs.io/en/stable/manual.html#object.buffer
-            # A negative number for buffer will choose the left side, whereas positive chooses the right
-            vein_line = LineString([vein_start, vein_end])
-            buffer_length = vein_line.length * 0.4
-            vein_buffer = Polygon(LineString([vein_start, vein_end]).buffer(buffer_length * modifier, single_sided = True))
-
-            control_point_1 = generate_random_points(1, vein_buffer)[0] 
-            control_point_2 = generate_random_points(1, vein_buffer)[0] 
-
-            nodes = np.asarray([
-                [vein_start.x, control_point_1.x, control_point_2.x, vein_end.x],
-                [vein_start.y, control_point_1.y, control_point_2.y, vein_end.y]
-            ])
-            vein = bezier.Curve(
-                nodes,
-                degree = 3
-            )
+            vein = Vein(vein_start, vein_end, vein_trajectory)
             veins.append(vein)
-        return veins
 
+        return veins
 
     def _compute_vein_end(self, vein_start: Point, vein_trajectory: Vector, side_curve: bezier.Curve) -> Point:
         # Find a point definitely outside the leaf (worst case the point is the tip or base
@@ -176,18 +227,17 @@ class Leaf():
 
 
 
-def generate_random_points(number: int, polygon: Polygon) -> Sequence[Point]:
-    points = []
-    if len(polygon.bounds) == 0:
-        raise Exception("could not compute control points for vein bezier")
-    minx, miny, maxx, maxy = polygon.bounds
-    while len(points) < number:
-        pnt = Point(random.uniform(minx, maxx), random.uniform(miny, maxy))
-        if polygon.contains(pnt):
-            points.append(pnt)
-    return points
-    
+def add(point: Point, vector: Vector) -> Point:
+    return Point(point.x + vector.x, point.y + vector.y)
 
+
+def between_two_points(p1: Point, p2: Point, how_far: float) -> Point:
+    if how_far > 1 or how_far < 0:
+        raise Exception("factor between two points must be between 0 and 1")
+
+    return Point(p1.x + how_far * (p2.x - p1.x), p1.y + how_far * (p2.y - p1.y))
+
+    
 def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf):
     def sketch_cubic_bezier(curve: bezier.Curve):
         nodes = curve.nodes
@@ -213,10 +263,10 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf):
     # sketch_bezier(leaf.left_vein_boundary.nodes)
         
     for vein in leaf.left_veins:
-        sketch_cubic_bezier(vein)
+        sketch_cubic_bezier(vein.vein)
 
     for vein in leaf.right_veins:
-        sketch_cubic_bezier(vein)
+        sketch_cubic_bezier(vein.vein)
 
     vsk.line(
         leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)

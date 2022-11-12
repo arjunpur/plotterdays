@@ -59,12 +59,12 @@ class Grid:
         self.top_left = top_left
         self.num_cols = num_cols
         self.num_rows = num_rows
-        self._cell_width = self.width / self.num_cols
-        self._cell_height = self.height / self.num_rows
+        self.cell_width = self.width / self.num_cols
+        self.cell_height = self.height / self.num_rows
 
     def get_cell_at_index(self, row: int, col: int) -> Cell:
-        width = self._cell_width
-        height = self._cell_height
+        width = self.cell_width
+        height = self.cell_height
         cell_x = self.top_left.x + (col * width)
         cell_y = self.top_left.y + (row * height)
         return Cell(Point(cell_x, cell_y), width, height)
