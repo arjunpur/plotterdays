@@ -1,10 +1,12 @@
+from math import copysign
+import sys
 import bezier
 from lib.shapely import generate_random_points_in_polygon
 import vsketch
 import numpy as np
-from typing import Sequence, Optional, Tuple 
+from typing import Sequence, Optional, Tuple, List 
 from lib.grid import Grid, create_grid_with_padding, draw_grid
-from lib.vector import Vector, draw_vector
+from lib.vector import Vector, draw_vector, rotate_vector
 from shapely.geometry import LineString, Point, Polygon
 
 
@@ -62,10 +64,22 @@ class LeafSketch(vsketch.SketchClass):
 
 class Vein():
 
-    def __init__(self, vein_start: Point, vein_end: Point, vein_trajectory: Vector):
-        vein_line = LineString([vein_start, vein_end])
-        self.vein = create_curve_with_light_bend(
-            (vein_start, vein_end),
+    def __init__(self, vein_start: Point, vein_trajectory: Vector, vein_boundaries: List[bezier.Curve], vsk: Optional[vsketch.Vsketch] = None):
+        if vsk:
+            self.vsk = vsk
+
+        for boundary in vein_boundaries:
+            computed_vein_end = self._compute_vein_end(vein_start, vein_trajectory, boundary)
+            if computed_vein_end:
+                self.vein_end = computed_vein_end
+                break
+        if not self.vein_end:
+            raise Exception("could not compute vein end - invalid boundaries")
+
+        vein_line = LineString([vein_start, self.vein_end])
+        self.vein_boundary = vein_boundaries
+        self.curve = create_curve_with_light_bend(
+            (vein_start, self.vein_end),
             vein_trajectory,
             (0.25, 0.75),
             vein_line.length * 0.2,
@@ -73,19 +87,21 @@ class Vein():
             vein_line.length * 0.1
         )
         
-        self._create_sub_veins()
 
-    def _create_sub_veins(self): 
-        parameters = np.asarray([0.2, 0.4, 0.7, 0.9])
-        for s in parameters:
-            points = self.vein.evaluate_multi(parameters)
-            print("--------------")
-            print(points)
-            print(points.shape)
-            print("--------------")
-
-        # TODO: Rotate the vein_trajectory to aim the sub_vein + add some randomness
-        # TODO: Iterate through these sub_vein starting points and re-call the light bend curve
+    def _compute_vein_end(self, vein_start: Point, vein_trajectory: Vector, side_curve: bezier.Curve) -> Optional[Point]:
+        try:
+            scaled_vein_trajectory = vein_trajectory * sys.maxsize
+            bounding_point_end = add(vein_start, scaled_vein_trajectory)
+            nodes = np.asarray([[vein_start.x, bounding_point_end.x], [vein_start.y, bounding_point_end.y]])
+            line_segment = bezier.Curve(
+                nodes,
+                degree = 1
+            )
+            intersection_s_value_with_vein_boundary = side_curve.intersect(line_segment)[0][0]
+            intersection_point = side_curve.evaluate(intersection_s_value_with_vein_boundary)
+            return Point(intersection_point)
+        except:
+            return None
 
 
 def create_curve_with_light_bend(
@@ -151,7 +167,7 @@ class Leaf():
     # The veins will be bounded by another bezier curve that is structurally equivalent to the
     # main leaf curves, except that the control point influenced by width will be adjusted
     # down by this fraction
-    VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH = 0.7
+    VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH = 0.9
 
     # The trajectory of the veins
     # TODO: Add some randomness to this
@@ -197,34 +213,44 @@ class Leaf():
         """
         vein_gap = (self.base.y - self.tip.y) / self.num_veins
         veins = []
+        
 
         left_or_right = vein_trajectory.x < 0
         vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width, left = left_or_right)
+        last_vein = None
         for i in range(1, self.num_veins):
             vein_start = Point(self.base.x, self.base.y - vein_gap * i)
-            vein_end = self._compute_vein_end(vein_start, vein_trajectory, vein_boundary)
-            vein = Vein(vein_start, vein_end, vein_trajectory)
+            vein = Vein(vein_start, vein_trajectory, [vein_boundary])
             veins.append(vein)
+            
+
+            # Construct sub-veins at hard coded points on the main vein. Rotate the main vein'scaled_vein_trajectory
+            # trajectory by angles defined below
+            # The sub-vein intersects either with the main vein boundary, or the last main vein created. 
+            # TODO: Replace with better collision detection
+            parameters = np.asarray([0.2, 0.4, 0.7, 0.9])
+            points = vein.curve.evaluate_multi(parameters)
+            rotations_for_trajectories = np.asarray([10.0, 35.0, 45.0, 32.0]) * copysign(1, vein_trajectory.x) 
+    
+            rotator = np.vectorize(lambda angle: rotate_vector(vein_trajectory, angle, degrees = True))
+
+            for j, trajectory in enumerate(rotator(rotations_for_trajectories)):
+                sub_vein_start = Point(points[0][j], points[1][j])
+                boundaries = [vein_boundary]
+                if last_vein:
+                    boundaries = [last_vein.curve, vein_boundary]
+                sub_vein = Vein(sub_vein_start, trajectory, boundaries, self.vsk)
+                veins.append(sub_vein)
+
+            last_vein = vein
+
+
+            # TODO: Iterate through these sub_vein starting points and re-call the light bend curve
+
+            # TODO: Rotate the vein_trajectory to aim the sub_vein + add some randomness
+
 
         return veins
-
-    def _compute_vein_end(self, vein_start: Point, vein_trajectory: Vector, side_curve: bezier.Curve) -> Point:
-        # Find a point definitely outside the leaf (worst case the point is the tip or base
-        # and the vein_trajectory is one of the two axis
-        bounding_circle_radius = max(self.width, self.length)
-        scaled_vein_trajectory = vein_trajectory * bounding_circle_radius
-        bounding_point_end = Point(vein_start.x + scaled_vein_trajectory.x, vein_start.y + scaled_vein_trajectory.y)
-        
-        nodes = np.asarray([[vein_start.x, bounding_point_end.x], [vein_start.y, bounding_point_end.y]])
-        line_segment = bezier.Curve(
-            nodes,
-            degree = 1
-        )
-
-        intersection_parameter_with_vein_boundary = side_curve.intersect(line_segment)
-        intersection_point = side_curve.evaluate(intersection_parameter_with_vein_boundary[0][0])
-        return Point(intersection_point)
-
 
 
 def add(point: Point, vector: Vector) -> Point:
@@ -263,10 +289,10 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf):
     # sketch_bezier(leaf.left_vein_boundary.nodes)
         
     for vein in leaf.left_veins:
-        sketch_cubic_bezier(vein.vein)
+        sketch_cubic_bezier(vein.curve)
 
     for vein in leaf.right_veins:
-        sketch_cubic_bezier(vein.vein)
+        sketch_cubic_bezier(vein.curve)
 
     vsk.line(
         leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)
