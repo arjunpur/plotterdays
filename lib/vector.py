@@ -20,14 +20,18 @@ class Vector:
         self.numpy = np.array([x, y])
 
     @property
-    def length(self):
-        return np.linalg.norm(self.numpy)
+    def length(self) -> float:
+        return float(np.linalg.norm(self.numpy))
 
     # https://stackoverflow.com/questions/44640479/type-annotation-for-classmethod-returning-instance
     @classmethod
     def from_numpy_array(cls, np_array: np.ndarray) -> Vector:
         assert(np_array.shape == (2,))
         return cls(np_array[0], np_array[1])
+
+    @classmethod
+    def from_two_points(cls, p1: Point, p2: Point) -> Vector:
+        return Vector(p2.x - p1.x, p2.y - p1.y)
 
     def to_line_string(self, start_point: Point) -> LineString:
         end_point = Point(start_point.x + self.x, start_point.y + self.y)
@@ -63,6 +67,12 @@ class Vector:
 
     def dot_product(self, other: Vector) -> float:
         return np.dot(self.numpy, other.numpy)
+
+    def scale(self, x, y) -> Vector:
+        self.x *= x 
+        self.y *= y 
+        self.numpy = np.array([self.x, self.y])
+        return self
 
     def __mul__(self, other: int | float) -> Vector:
         return Vector(self.x * other, self.y * other)

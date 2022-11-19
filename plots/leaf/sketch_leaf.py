@@ -1,4 +1,5 @@
 from math import copysign
+from random import random, uniform, choice
 import sys
 import bezier
 from lib.shapely import generate_random_points_in_polygon
@@ -15,6 +16,7 @@ from shapely.geometry import LineString, Point, Polygon
 # - Recursively generate sub-veins: https://natureofcode.com/book/chapter-8-fractals/
 # - Add randomness to the shape of the center vein, the direction of the veins, the outer shape of the leaf
 # - I might want to use the intersection function to actually find the point on the curve. I might just be able to use `evaluate_multi` though
+
 
 class LeafSketch(vsketch.SketchClass):
     leaf_length = vsketch.Param(3.0)
@@ -36,10 +38,82 @@ class LeafSketch(vsketch.SketchClass):
         # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
         # draw_leaf(vsk, leaf)
     
-        vsk.strokeWeight(3)
-        leaf_base = grid.get_cell_at_index(14, 8).center
-        leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
-        draw_leaf(vsk, leaf)
+        # leaf_base = grid.get_cell_at_index(14, 8).center
+        # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        # draw_leaf(vsk, leaf, 3)
+
+        # leaf_base = grid.get_cell_at_index(14, 14).center
+        # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        # draw_leaf(vsk, leaf, 3)
+        
+        rect_cell = grid.get_cell_at_index(0, 0)
+        sub_grid = Grid(rect_cell.width * 8, rect_cell.height * 8, rect_cell.top_left, 10, 10) 
+        draw_grid(vsk, sub_grid)
+        
+        start_cell = sub_grid.get_cell_at_index(0, 5)
+        end_cell = sub_grid.get_cell_at_index(5, 9)
+        vsk.point(start_cell.center.x, start_cell.center.y)
+        vsk.point(end_cell.center.x, end_cell.center.y)
+
+        curve = create_curve_with_light_bend_and_noise(
+            vsk,
+            (start_cell.center, end_cell.center),
+            Vector.from_two_points(start_cell.center, end_cell.center),
+            (0.25, 0.75),
+            0.7, 0.0, 0.2)
+
+        # vsk.polygon(curve[0], curve[1])
+
+        
+        def create_branched_curves(
+                start_point: Point,
+                length: float,
+                trajectory: Vector,
+                count: int,
+                trunk_width: float,
+        ):
+            if count > 5:
+                return
+            
+            end_point = add(start_point, trajectory * length)
+            curve = create_curve_with_light_bend_and_noise(
+                vsk,
+                (start_point, end_point),
+                trajectory,
+                (0.25, 0.75),
+                trunk_width, 0.0, 0.2)
+
+            vsk.polygon(curve[0], curve[1])
+
+            # Do the rotation and recurse
+
+            direction = choice([15.0])
+            # new_trajectory = trajectory.get_perpendicular(clockwise = trajectory.x > 0)
+            new_trajectory = rotate_vector(trajectory, direction, degrees = True)
+            new_length = length / 3
+            new_count = count + 1
+            # from pdb import set_trace; set_trace()
+            new_start_point = Point(curve[0][int(len(curve[0]) / 2)], curve[1][int(len(curve[0]) / 2)])
+
+            create_branched_curves(
+                new_start_point,
+                new_length,
+                new_trajectory,
+                new_count,
+                trunk_width / 3,
+            )
+        
+        base_vector = Vector.from_two_points(start_cell.center, end_cell.center).scale(start_cell.width, start_cell.height)
+        create_branched_curves(start_cell.center, base_vector.length, base_vector, 0, 0.7) 
+        
+        # num_lines = 250
+        # x_coords = np.linspace(0., 250., 1000)
+        # perlin = vsk.noise(x_coords * 0.1, np.linspace(0, 5., num_lines))
+        # print(perlin.shape)
+        # for j in range(num_lines):
+        #     vsk.polygon(x_coords, j + perlin[:, j] * 10)
+
+
 
     def draw_branch(self, grid: Grid, vsk: vsketch.Vsketch) -> None:
         branch_start = grid.get_cell_at_index(10, 3).center
@@ -64,7 +138,15 @@ class LeafSketch(vsketch.SketchClass):
 
 class Vein():
 
-    def __init__(self, vein_start: Point, vein_trajectory: Vector, vein_boundaries: List[bezier.Curve], vsk: Optional[vsketch.Vsketch] = None):
+    def __init__(
+        self,
+        vein_start: Point,
+        vein_trajectory: Vector,
+        vein_boundaries: List[bezier.Curve],
+        level: int = 0,
+        vsk: Optional[vsketch.Vsketch] = None,
+    ):
+        self.level = level
         if vsk:
             self.vsk = vsk
 
@@ -103,6 +185,35 @@ class Vein():
         except:
             return None
 
+def create_curve_with_light_bend_and_noise(
+        vsk: vsketch.Vsketch,
+        start_end: Tuple[Point, Point],
+        trajectory: Vector,
+        control_point_locations: Tuple[float, float],
+        trunk_width: float,
+        tip_width: float,
+        control_point_precision: float,
+    ) -> np.ndarray:
+
+    num_points = 1000
+    noise_vals = vsk.noise([0., 1.], np.linspace(start_end[0].x, start_end[1].x, num_points) / 2)
+
+    curve = create_curve_with_light_bend(
+        start_end,
+        trajectory,
+        control_point_locations,
+        trunk_width,
+        tip_width,
+        control_point_precision,
+    )
+
+    points = curve.evaluate_multi(np.linspace(0, 1, num_points))
+    new_points = points + noise_vals
+    translation_vector = Vector.from_two_points(Point(start_end[0].x, start_end[0].y), Point(new_points[0][0], new_points[1][0]))
+    new_points[0] -= translation_vector.x
+    new_points[1] -= translation_vector.y
+
+    return new_points
 
 def create_curve_with_light_bend(
         start_end: Tuple[Point, Point],
@@ -206,7 +317,7 @@ class Leaf():
         return bezier.Curve(nodes, degree = 3)
 
    
-    def _construct_veins(self, vein_trajectory: Vector) -> Sequence[Vein]:
+    def _construct_veins(self, vein_trajectory: Vector) -> List[Vein]:
         """
         Constructs a series of veins for a particular side of the leaf. Each vein is modelled as a 
         Bezier curve.
@@ -214,7 +325,6 @@ class Leaf():
         vein_gap = (self.base.y - self.tip.y) / self.num_veins
         veins = []
         
-
         left_or_right = vein_trajectory.x < 0
         vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width, left = left_or_right)
         last_vein = None
@@ -222,15 +332,25 @@ class Leaf():
             vein_start = Point(self.base.x, self.base.y - vein_gap * i)
             vein = Vein(vein_start, vein_trajectory, [vein_boundary])
             veins.append(vein)
-            
 
             # Construct sub-veins at hard coded points on the main vein. Rotate the main vein'scaled_vein_trajectory
             # trajectory by angles defined below
             # The sub-vein intersects either with the main vein boundary, or the last main vein created. 
             # TODO: Replace with better collision detection
-            parameters = np.asarray([0.2, 0.4, 0.7, 0.9])
+            parameters = np.asarray([
+                uniform(0.1, 0.3),
+                uniform(0.35, 0.5),
+                uniform(0.55, 0.70),
+                uniform(0.75, 0.85),
+                uniform(0.75, 0.95),
+            ])
             points = vein.curve.evaluate_multi(parameters)
-            rotations_for_trajectories = np.asarray([10.0, 35.0, 45.0, 32.0]) * copysign(1, vein_trajectory.x) 
+            rotations_for_trajectories = np.asarray([
+                uniform(-30.0, 0.0),
+                uniform(-20.0, 30.0),
+                uniform(20.0, 50.0),
+                uniform(20.0, 50.0),
+            ]) * copysign(1, vein_trajectory.x) 
     
             rotator = np.vectorize(lambda angle: rotate_vector(vein_trajectory, angle, degrees = True))
 
@@ -239,7 +359,7 @@ class Leaf():
                 boundaries = [vein_boundary]
                 if last_vein:
                     boundaries = [last_vein.curve, vein_boundary]
-                sub_vein = Vein(sub_vein_start, trajectory, boundaries, self.vsk)
+                sub_vein = Vein(sub_vein_start, trajectory, boundaries, level = 1, vsk = self.vsk)
                 veins.append(sub_vein)
 
             last_vein = vein
@@ -264,23 +384,25 @@ def between_two_points(p1: Point, p2: Point, how_far: float) -> Point:
     return Point(p1.x + how_far * (p2.x - p1.x), p1.y + how_far * (p2.y - p1.y))
 
     
-def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf):
-    def sketch_cubic_bezier(curve: bezier.Curve):
-        nodes = curve.nodes
-        assert(nodes.shape == (2, 4)) # We expect a cubic Bezier curve
-        vsk.bezier(
-            nodes[0][0],
-            nodes[1][0],
-            nodes[0][1],
-            nodes[1][1],
-            nodes[0][2],
-            nodes[1][2],
-            nodes[0][3],
-            nodes[1][3] 
-        )
+def draw_cubic_bezier(vsk: vsketch.Vsketch, curve: bezier.Curve):
+    nodes = curve.nodes
+    assert(nodes.shape == (2, 4)) # We expect a cubic Bezier curve
+    vsk.bezier(
+        nodes[0][0],
+        nodes[1][0],
+        nodes[0][1],
+        nodes[1][1],
+        nodes[0][2],
+        nodes[1][2],
+        nodes[0][3],
+        nodes[1][3] 
+    )
 
-    sketch_cubic_bezier(leaf.left_side)
-    sketch_cubic_bezier(leaf.right_side)
+def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
+    vsk.strokeWeight(weight)
+
+    draw_cubic_bezier(vsk, leaf.left_side)
+    draw_cubic_bezier(vsk, leaf.right_side)
 
     # sketch_cubic_bezier(leaf.left_vein_boundary)
     
@@ -288,11 +410,15 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf):
     # DEBUG
     # sketch_bezier(leaf.left_vein_boundary.nodes)
         
-    for vein in leaf.left_veins:
-        sketch_cubic_bezier(vein.curve)
+    combined = leaf.left_veins + leaf.right_veins
+    for vein in combined:
+        if vein.level == 1:
+            vsk.strokeWeight(max(1, weight - 2))
+        else: 
+            vsk.strokeWeight(weight)
+        draw_cubic_bezier(vsk, vein.curve)
 
-    for vein in leaf.right_veins:
-        sketch_cubic_bezier(vein.curve)
+    vsk.strokeWeight(weight)
 
     vsk.line(
         leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)

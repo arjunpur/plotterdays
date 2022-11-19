@@ -28,6 +28,10 @@ class Cell:
         return self.position.x + self.width
 
     @property
+    def top_left(self) -> Point:
+        return self.position
+
+    @property
     def center(self) -> Point:
         center_x = (self.right + self.left) / 2.0
         center_y = (self.top + self.bottom) / 2.0
