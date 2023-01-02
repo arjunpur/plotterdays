@@ -49,17 +49,21 @@ class Vector:
         return vector_str
 
     def get_perpendicular(self, clockwise = True) -> Vector:
-        perp = self.numpy
+        """
+        Returns a vector perpendicular to this vector.
+        Note: since the coordinate system's origin is in the top left, 
+        the formula for calculating the perpendicular vector is inverted.
+        """
+        perp = self.numpy.copy()
         if clockwise:
-            perp[0], perp[1] = self.y, -1 * self.x
-        else:
             perp[0], perp[1] = -1 * self.y, self.x
-
+        else:
+            perp[0], perp[1] = self.y, -1 * self.x
         perp = perp / self.length
         return Vector(perp[0], perp[1])
 
 
-    def get_unit_vector(self) -> Vector:
+    def normalize(self) -> Vector:
         if self.length == 0:
             raise Exception("could not compute norm of a 0 vector")
         return Vector.from_numpy_array(self.numpy / self.length)
@@ -125,8 +129,8 @@ def draw_vector(
     # Create the tip of the vector by taking the original vector, rotating
     # in either direction + scaling it down.
     if draw_tip:
-        one_side = rotate_vector(vec, VECTOR_TIP_ANGLE_AWAY_FROM_MAIN, degrees=True).get_unit_vector()
-        other_side = rotate_vector(vec, -VECTOR_TIP_ANGLE_AWAY_FROM_MAIN, degrees=True).get_unit_vector()
+        one_side = rotate_vector(vec, VECTOR_TIP_ANGLE_AWAY_FROM_MAIN, degrees=True).normalize()
+        other_side = rotate_vector(vec, -VECTOR_TIP_ANGLE_AWAY_FROM_MAIN, degrees=True).normalize()
 
         scaled_one_side = Vector(one_side.x * VECTOR_TIP_SCALING_FACTOR, one_side.y * VECTOR_TIP_SCALING_FACTOR)
         scaled_other_side = Vector(other_side.x * VECTOR_TIP_SCALING_FACTOR, other_side.y * VECTOR_TIP_SCALING_FACTOR)
