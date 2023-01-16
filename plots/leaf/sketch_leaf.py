@@ -45,32 +45,6 @@ class LeafSketch(vsketch.SketchClass):
         leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
         draw_leaf(vsk, leaf, 3)
 
-        
-        # num_lines = 250
-        # x_coords = np.linspace(0., 250., 1000)
-        # perlin = vsk.noise(x_coords * 0.1, np.linspace(0, 5., num_lines))
-        # print(perlin.shape)
-        # for j in range(num_lines):
-        #     vsk.polygon(x_coords, j + perlin[:, j] * 10)
-
-
-    def draw_branch(self, grid: Grid, vsk: vsketch.Vsketch) -> None:
-        branch_start = grid.get_cell_at_index(10, 3).center
-        branch_end = grid.get_cell_at_index(10, 18).center
-        
-        num_leaves = 5
-        leaf_distance = (branch_end.x - branch_start.x) / num_leaves
-
-        vsk.line(branch_start.x, branch_start.y, branch_end.x, branch_end.y)
-        
-        for i in range(1, num_leaves):
-            leaf_base = Point(branch_start.x + leaf_distance * i, branch_start.y)
-            leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
-            draw_leaf(vsk, leaf)
-
-        vsk.line(branch_start.x, branch_start.y, branch_end.x, branch_end.y)
-
-
     def finalize(self, vsk: vsketch.Vsketch) -> None:
         vsk.vpype("linemerge linesimplify reloop linesort")
 
@@ -112,7 +86,6 @@ class Vein():
             bend_clockwise = left_or_right,
         )
         
-
     def _compute_vein_end(self, vein_start: Point, vein_trajectory: Vector, side_curve: bezier.Curve) -> Optional[Point]:
         try:
             scaled_vein_trajectory = vein_trajectory * sys.maxsize

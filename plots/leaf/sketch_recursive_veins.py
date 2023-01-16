@@ -20,7 +20,7 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
         sub_grid = Grid(rect_cell.width * 8, rect_cell.height * 8, rect_cell.top_left, 10, 10) 
         end_cell = sub_grid.get_cell_at_index(0, 5)
         start_cell = sub_grid.get_cell_at_index(5, 9)
-
+        
         vsk.point(start_cell.center.x, start_cell.center.y)
         vsk.point(end_cell.center.x, end_cell.center.y)
 
@@ -56,6 +56,7 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
             control_point_precision = 0.2,
             bend_clockwise=bend_clockwise,
         )
+        
         vsk.polygon(curve[0], curve[1])
 
         indices = random_n_elements_across_k_partitions(curve[0], 4, 4)
@@ -73,5 +74,5 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
                 new_length,
                 rotated_trajectory,
                 new_count,
-                trunk_width * 0.50
+                trunk_width * 0.90
             )
