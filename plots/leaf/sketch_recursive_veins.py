@@ -1,6 +1,7 @@
+from lib.random_utils import random_n_elements_across_k_partitions
 import vsketch
 import numpy as np
-from random import choice, sample
+from random import choice
 from lib.curves import create_curve_with_light_bend_and_noise
 from lib.grid import Grid, create_grid_with_padding, draw_grid
 from lib.point_utils import add
@@ -57,13 +58,7 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
         )
         vsk.polygon(curve[0], curve[1])
 
-        # Pick N random points on the curve to start branching from
-        # and recurse
-        indices_first_fourth = sample(range(0, len(curve[0]) // 4), 1)
-        indices_second_fourth = sample(range(len(curve[0]) // 4, len(curve[0]) // 2), 1)
-        indices_third_fourth = sample(range(len(curve[0]) // 2, 3 * len(curve[0]) // 4), 1)
-        indices_fourth_fourth = sample(range(3 * len(curve[0]) // 4, len(curve[0]) - 1), 1)
-        indices = indices_first_fourth + indices_second_fourth + indices_third_fourth + indices_fourth_fourth
+        indices = random_n_elements_across_k_partitions(curve[0], 4, 4)
         start_points = [curve[0][indices], curve[1][indices]]
         # draw_vector(vsk, unit_trajectory * length, start_point)
         for i in range(len(start_points[0])):
@@ -80,9 +75,3 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
                 new_count,
                 trunk_width * 0.50
             )
-        
-        # TODO: Instead of just branching out from one point, select N random points 
-        # along the curve and branch out from there.
-
-        # TODO: Fix the width of the branches such that the branching feels a bit more natural.
-
