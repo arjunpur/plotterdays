@@ -78,8 +78,14 @@ class Vector:
         self.numpy = np.array([self.x, self.y])
         return self
 
+    def __add__(self, other: Vector) -> Vector:
+        return Vector(self.x + other.x, self.y + other.y)
+
     def __mul__(self, other: int | float) -> Vector:
         return Vector(self.x * other, self.y * other)
+
+    def __truediv__(self, other: int | float) -> Vector:
+        return Vector(self.x / other, self.y / other)
 
 # TODO: Understand how vector rotation actually works mathematically
 # TODO: Use shapely to perform the affine transformation. There's no

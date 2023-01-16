@@ -5,7 +5,8 @@ from lib.vector import Vector
 import vsketch
 import numpy as np
 from typing import Tuple 
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LineString, Point, Polygon
+from shapely.affinity import scale, translate
 
 
 def create_curve_with_light_bend_and_noise(
@@ -19,7 +20,9 @@ def create_curve_with_light_bend_and_noise(
     ) -> np.ndarray:
 
     num_points = 1000
-    noise_vals = vsk.noise([0., 1.], np.linspace(start_end[0].x, start_end[1].x, num_points) / 2)
+
+    start, end = start_end[0], start_end[1]
+    noise_vals = vsk.noise([0., 1.], np.linspace(start.x, end.x, num_points) / 2)
 
     curve = create_curve_with_light_bend(
         start_end,
@@ -29,14 +32,36 @@ def create_curve_with_light_bend_and_noise(
         control_point_precision,
         bend_clockwise,
     )
-
+    
     points = curve.evaluate_multi(np.linspace(0, 1, num_points))
     new_points = points + noise_vals
-    translation_vector = Vector.from_two_points(Point(start_end[0].x, start_end[0].y), Point(new_points[0][0], new_points[1][0]))
-    new_points[0] -= translation_vector.x
-    new_points[1] -= translation_vector.y
 
-    return new_points
+    # Turn all tuples in zipped into a Point
+    zipped = list(zip(new_points[0], new_points[1]))
+    new_points  = [Point(p) for p in zipped]
+
+    # Scale and translate the points to ensure the curve starts and ends
+    # at (start, end)
+    scale_factor_x = (end.x - start.x) / (new_points[-1].x - new_points[0].x)
+    scale_factor_y = (end.y - start.y) / (new_points[-1].y - new_points[0].y)
+    # translation_vector = Vector(sum(noise_vals[0]), sum(noise_vals[1]))
+
+    start_point_displacement = Vector.from_two_points(new_points[0], start)
+    end_point_displacement = Vector.from_two_points(new_points[-1], end)
+
+    displacement_vector = start_point_displacement
+
+    # zip the points in new_points together
+    line = LineString(zipped)
+    line = scale(line, xfact = scale_factor_x, yfact = scale_factor_y, origin = "centroid")
+    line = translate(line, xoff = displacement_vector.x, yoff = displacement_vector.y)
+
+    # TODO: Figure out why the line is still displaced by a bit 
+    coords = line.coords
+    x_coords = [coord[0] for coord in coords]
+    y_coords = [coord[1] for coord in coords]
+
+    return np.asarray([x_coords, y_coords])
 
 def create_curve_with_light_bend(
         start_end: Tuple[Point, Point],
