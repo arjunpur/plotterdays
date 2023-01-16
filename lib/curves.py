@@ -44,16 +44,12 @@ def create_curve_with_light_bend_and_noise(
     # at (start, end)
     scale_factor_x = (end.x - start.x) / (new_points[-1].x - new_points[0].x)
     scale_factor_y = (end.y - start.y) / (new_points[-1].y - new_points[0].y)
-    # translation_vector = Vector(sum(noise_vals[0]), sum(noise_vals[1]))
-
-    start_point_displacement = Vector.from_two_points(new_points[0], start)
-    end_point_displacement = Vector.from_two_points(new_points[-1], end)
-
-    displacement_vector = start_point_displacement
 
     # zip the points in new_points together
     line = LineString(zipped)
     line = scale(line, xfact = scale_factor_x, yfact = scale_factor_y, origin = "centroid")
+
+    displacement_vector = Vector.from_two_points(Point(line.coords[0][0], line.coords[0][1]), start)
     line = translate(line, xoff = displacement_vector.x, yoff = displacement_vector.y)
 
     # TODO: Figure out why the line is still displaced by a bit 
