@@ -89,7 +89,7 @@ class RecursiveVeinsSketch(vsketch.SketchClass):
         start_angle = choice([30])
         for i in range(len(start_points[0])):
             # Pick a random angle to rotate
-            angle = start_angle - (i * 10) 
+            angle = start_angle - (i * 5) 
             new_length = length * 0.5
             new_count = count + 1
             rotated_trajectory = rotate_vector(unit_trajectory, angle, degrees = True)

@@ -4,6 +4,7 @@ import sys
 import bezier
 from lib.curves import create_curve_with_light_bend, create_curve_with_light_bend_and_noise, draw_cubic_bezier
 from lib.point_utils import add
+from lib.random_utils import random_n_elements_across_k_partitions
 import vsketch
 import numpy as np
 from typing import Optional, List 
@@ -49,57 +50,6 @@ class LeafSketch(vsketch.SketchClass):
         vsk.vpype("linemerge linesimplify reloop linesort")
 
 
-class Vein():
-
-    def __init__(
-        self,
-        vein_start: Point,
-        vein_trajectory: Vector,
-        vein_boundaries: List[bezier.Curve],
-        level: int = 0,
-        vsk: Optional[vsketch.Vsketch] = None,
-    ):
-        self.level = level
-        if vsk:
-            self.vsk = vsk
-
-        for boundary in vein_boundaries:
-            computed_vein_end = self._compute_vein_end(vein_start, vein_trajectory, boundary)
-            if computed_vein_end:
-                self.vein_end = computed_vein_end
-                break
-        if not self.vein_end:
-            raise Exception("could not compute vein end - invalid boundaries")
-
-        vein_line = LineString([vein_start, self.vein_end])
-        self.vein_boundary = vein_boundaries
-        
-        # TODO: This might not work if the orientation of the vein is reverse
-        trajectory = Vector.from_two_points(vein_start, self.vein_end).normalize()
-        left_or_right = trajectory.x < 0
-        self.curve = create_curve_with_light_bend(
-            (vein_start, self.vein_end),
-            (0.25, 0.75),
-            vein_line.length * 0.2,
-            vein_line.length * 0.1,
-            vein_line.length * 0.1,
-            bend_clockwise = left_or_right,
-        )
-        
-    def _compute_vein_end(self, vein_start: Point, vein_trajectory: Vector, side_curve: bezier.Curve) -> Optional[Point]:
-        try:
-            scaled_vein_trajectory = vein_trajectory * sys.maxsize
-            bounding_point_end = add(vein_start, scaled_vein_trajectory)
-            nodes = np.asarray([[vein_start.x, bounding_point_end.x], [vein_start.y, bounding_point_end.y]])
-            line_segment = bezier.Curve(
-                nodes,
-                degree = 1
-            )
-            intersection_s_value_with_vein_boundary = side_curve.intersect(line_segment)[0][0]
-            intersection_point = side_curve.evaluate(intersection_s_value_with_vein_boundary)
-            return Point(intersection_point)
-        except:
-            return None
 
 class Leaf():
     """
@@ -134,13 +84,25 @@ class Leaf():
         self.length = length
         self.num_veins = num_veins
 
-        right_vein_trajectory = Vector(1.0, -1.0).normalize() 
+        # right_vein_trajectory = Vector(1.0, -1.0).normalize() 
         self.right_side = self._construct_side(self.width, left = False)
-        self.right_veins = self._construct_veins(right_vein_trajectory)
-
-        left_vein_trajectory = Vector(-1.0, -1.0).normalize() 
         self.left_side = self._construct_side(self.width)
-        self.left_veins = self._construct_veins(left_vein_trajectory)
+
+        trajectory = Vector.from_two_points(self.base, self.tip).normalize()
+
+        self.veins = self.create_branched_curves(
+            self.vsk,
+            self.base,
+            length,
+            trajectory,
+            count = 0,
+            trunk_width = 0.2,
+            control_point_precision = 0.01,
+        )
+
+        # self.right_veins = self._construct_veins(right_vein_trajectory)
+        # left_vein_trajectory = Vector(-1.0, -1.0).normalize() 
+        # self.left_veins = self._construct_veins(left_vein_trajectory)
 
 
     def _construct_side(self, width: float, left: bool = True) -> bezier.Curve:
@@ -155,60 +117,75 @@ class Leaf():
         ])
         return bezier.Curve(nodes, degree = 3)
 
-   
-    def _construct_veins(self, vein_trajectory: Vector) -> List[Vein]:
-        """
-        Constructs a series of veins for a particular side of the leaf. Each vein is modelled as a 
-        Bezier curve.
-        """
-        vein_gap = abs(self.base.y - self.tip.y) / self.num_veins
-        veins = []
+
+    def create_branched_curves(
+        self,
+        vsk: vsketch.Vsketch,
+        start_point: Point,
+        length: float,
+        unit_trajectory: Vector,
+        count: int,
+        trunk_width: float,
+        control_point_precision: float,
+    ) -> List[bezier.Curve]:
+        curves = []
+        if count > 2:
+            return [] 
+
+        # Draw the curve as described by the given parameters 
+        bend_clockwise = unit_trajectory.x > 0
+        end_point = add(start_point, unit_trajectory * length)
+
+        # With noise
+        # curve = create_curve_with_light_bend_and_noise(
+        #     vsk,
+        #     start_end = (start_point, end_point),
+        #     control_point_locations = (0.25, 0.75),
+        #     trunk_width = trunk_width,
+        #     tip_width = 0.0,
+        #     control_point_precision = 0.01,
+        #     bend_clockwise=bend_clockwise,
+        # )
+        # vsk.polygon(curve[0], curve[1])
+        # indices = random_n_elements_across_k_partitions(curve[0], 3, 3)
+        # start_points = [curve[0][indices], curve[1][indices]]
         
-        left_or_right = vein_trajectory.x < 0
-        vein_boundary = self._construct_side(self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH * self.width, left = left_or_right)
-        last_vein = None
-        for i in range(1, self.num_veins):
-            vein_start = Point(self.base.x, self.base.y - vein_gap * i)
-            vein = Vein(vein_start, vein_trajectory, [vein_boundary])
-            veins.append(vein)
+        # No Noise approach
+        no_noise_curve = create_curve_with_light_bend(
+            start_end = (start_point, end_point),
+            control_point_locations = (0.25, 0.75),
+            trunk_width = trunk_width,
+            tip_width = 0.0,
+            control_point_precision = 0.01,
+            bend_clockwise=bend_clockwise,
+        )
+        draw_cubic_bezier(vsk, no_noise_curve)
+        curves.append(no_noise_curve)
+        points = no_noise_curve.evaluate_multi(np.linspace(0, 1, 1000))
+        indices = random_n_elements_across_k_partitions(points[0], 3, 3)
+        start_points = [points[0][indices], points[1][indices]]
 
-            # Construct sub-veins at hard coded points on the main vein. Rotate the main vein'scaled_vein_trajectory
-            # trajectory by angles defined below
-            # The sub-vein intersects either with the main vein boundary, or the last main vein created. 
-            # TODO: Replace with better collision detection
-            parameters = np.asarray([
-                uniform(0.1, 0.3),
-                uniform(0.35, 0.5),
-                uniform(0.55, 0.70),
-                uniform(0.75, 0.85),
-                uniform(0.75, 0.95),
-            ])
-            points = vein.curve.evaluate_multi(parameters)
-            rotations_for_trajectories = np.asarray([
-                uniform(-30.0, 0.0),
-                uniform(-20.0, 30.0),
-                uniform(20.0, 50.0),
-                uniform(20.0, 50.0),
-            ]) * copysign(1, vein_trajectory.x) 
-    
-            rotator = np.vectorize(lambda angle: rotate_vector(vein_trajectory, angle, degrees = True))
 
-            for j, trajectory in enumerate(rotator(rotations_for_trajectories)):
-                sub_vein_start = Point(points[0][j], points[1][j])
-                boundaries = [vein_boundary]
-                if last_vein:
-                    boundaries = [last_vein.curve, vein_boundary]
-                sub_vein = Vein(sub_vein_start, trajectory, boundaries, level = 1, vsk = self.vsk)
-                veins.append(sub_vein)
+        start_angle = choice([30])
+        for i in range(len(start_points[0])):
+            # Pick a random angle to rotate
+            angle = start_angle - (i * 5) 
+            new_length = length * 0.5
+            new_count = count + 1
+            rotated_trajectory = rotate_vector(unit_trajectory, angle, degrees = True)
+            recursed_curves = self.create_branched_curves(
+                vsk,
+                Point(start_points[0][i], start_points[1][i]),
+                new_length,
+                rotated_trajectory,
+                new_count,
+                trunk_width * 0.6,
+                control_point_precision * 0.6,
+            )
+            curves = curves + recursed_curves
+        return curves
 
-            last_vein = vein
-
-            # TODO: Iterate through these sub_vein starting points and re-call the light bend curve
-
-            # TODO: Rotate the vein_trajectory to aim the sub_vein + add some randomness
-
-        return veins
-
+   
 def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
     vsk.strokeWeight(weight)
 
@@ -216,20 +193,22 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
     draw_cubic_bezier(vsk, leaf.right_side)
 
     vsk.stroke(1)
+
+    for vein in leaf.veins:
+        draw_cubic_bezier(vsk, vein)
         
-    combined = leaf.left_veins + leaf.right_veins
-    for vein in combined:
-        if vein.level == 1:
-            vsk.strokeWeight(max(1, weight - 2))
-        else: 
-            vsk.strokeWeight(weight)
-        draw_cubic_bezier(vsk, vein.curve)
+    # combined = leaf.left_veins + leaf.right_veins
+    # for vein in combined:
+    #     if vein.level == 1:
+    #         vsk.strokeWeight(max(1, weight - 2))
+    #     else: 
+    #         vsk.strokeWeight(weight)
+    #     draw_cubic_bezier(vsk, vein.curve)
 
     vsk.strokeWeight(weight)
 
-    vsk.line(
-        leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)
-
+    # vsk.line(
+    #     leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)
 
 
 if __name__ == "__main__":

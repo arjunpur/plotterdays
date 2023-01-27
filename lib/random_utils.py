@@ -24,12 +24,12 @@ def random_n_elements_across_k_partitions(list, n, k):
 
     Note: You may not get N points if N is not divisible by k
     """
-    if k > n:
-        raise Exception("N must be larger than k")
+    # if k > n:
+    #     raise Exception("N must be larger than k")
     if n > len(list):
         raise Exception("N must be smaller than the length of the list")
 
-    base_points_per_partition = n // k
+    base_points_per_partition = max(n // k, 1)
     points_for_last_partition = base_points_per_partition + (n - (base_points_per_partition * k))
 
     def points_per_partition(i):
