@@ -4,7 +4,7 @@ import sys
 import bezier
 from lib.curves import create_curve_with_light_bend, create_curve_with_light_bend_and_noise, draw_cubic_bezier
 from lib.point_utils import add
-from lib.random_utils import random_n_elements_across_k_partitions
+from lib.random_utils import partition_list, random_n_elements_across_k_partitions
 import vsketch
 import numpy as np
 from typing import Optional, List 
@@ -30,17 +30,17 @@ class LeafSketch(vsketch.SketchClass):
         grid = create_grid_with_padding(0.5, (0.50, 0.50)) 
         # draw_grid(vsk, grid)
         
-        leaf_base = grid.get_cell_at_index(5, 2).center
-        leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
-        draw_leaf(vsk, leaf)
+        # leaf_base = grid.get_cell_at_index(5, 2).center
+        # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        # draw_leaf(vsk, leaf)
 
-        leaf_base = grid.get_cell_at_index(5, 8).center
-        leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
-        draw_leaf(vsk, leaf)
+        # leaf_base = grid.get_cell_at_index(5, 8).center
+        # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        # draw_leaf(vsk, leaf)
     
-        leaf_base = grid.get_cell_at_index(14, 8).center
-        leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
-        draw_leaf(vsk, leaf, 3)
+        # leaf_base = grid.get_cell_at_index(14, 8).center
+        # leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
+        # draw_leaf(vsk, leaf, 3)
 
         leaf_base = grid.get_cell_at_index(14, 14).center
         leaf = Leaf(leaf_base, self.leaf_length, self.leaf_width, self.num_veins, vsk)
@@ -89,7 +89,12 @@ class Leaf():
         self.left_side = self._construct_side(self.width)
 
         trajectory = Vector.from_two_points(self.base, self.tip).normalize()
-
+        
+        vein_boundary_width = self.width * self.VEIN_BOUNDARY_PERCENTAGE_OF_WIDTH
+        left_vein_boundary = self._construct_side(vein_boundary_width, left = True)
+        right_vein_boundary = self._construct_side(vein_boundary_width, left = False)
+        self.boundaries = [left_vein_boundary, right_vein_boundary]
+        self.curves = []
         self.veins = self.create_branched_curves(
             self.vsk,
             self.base,
@@ -127,14 +132,19 @@ class Leaf():
         count: int,
         trunk_width: float,
         control_point_precision: float,
-    ) -> List[bezier.Curve]:
-        curves = []
-        if count > 2:
-            return [] 
+        left_or_right: Optional[str] = None,
+        start_angle: float = 30.0
+    ):
+        if count > 3:
+            return 
 
         # Draw the curve as described by the given parameters 
         bend_clockwise = unit_trajectory.x > 0
         end_point = add(start_point, unit_trajectory * length)
+
+        # TODO: Calculate end point and terminate recursion if necessary if the end point is outside any
+        # of the boundaries
+
 
         # With noise
         # curve = create_curve_with_light_bend_and_noise(
@@ -159,31 +169,81 @@ class Leaf():
             control_point_precision = 0.01,
             bend_clockwise=bend_clockwise,
         )
-        draw_cubic_bezier(vsk, no_noise_curve)
-        curves.append(no_noise_curve)
+
+
+        # See if the curve intersects any of the boundaries
+        # Don't do this on the first round of recursion
+        min_s_value = 1.0 
+        found_intersection = False
+        if count != 0:
+            for boundary in self.boundaries:
+                intersection_values = no_noise_curve.intersect(boundary)
+                s_values = intersection_values[0]
+                if len(s_values) > 0 and s_values[0] != 0.0:
+                    found_intersection = True
+                    min_s_value = min(min_s_value, s_values[0])
+
+            if found_intersection:
+                truncated_end_point = Point(no_noise_curve.evaluate(min_s_value))
+                # Don't draw the curve if the start and end points are very close
+                truncated_curve = create_curve_with_light_bend(
+                    start_end = (start_point, truncated_end_point),
+                    control_point_locations = (0.25, 0.75),
+                    trunk_width = trunk_width,
+                    tip_width = 0.0,
+                    control_point_precision = 0.01,
+                    bend_clockwise=bend_clockwise,
+                )
+                no_noise_curve = truncated_curve
+
+        if no_noise_curve.length < 0.05:
+            return
+
+        self.curves.append(no_noise_curve)
+        self.boundaries.append(no_noise_curve)
         points = no_noise_curve.evaluate_multi(np.linspace(0, 1, 1000))
-        indices = random_n_elements_across_k_partitions(points[0], 3, 3)
+        # indices = random_n_elements_across_k_partitions(points[0], 3, 4)
+        partitions = partition_list([i for i in range(len(points[0]) - 1)], 12)
+        # Pick starting points from partition 2, 3, 5
+        indices = [choice(partition) for partition in partitions[0:9:1]]
         start_points = [points[0][indices], points[1][indices]]
 
-
-        start_angle = choice([30])
         for i in range(len(start_points[0])):
             # Pick a random angle to rotate
-            angle = start_angle - (i * 5) 
-            new_length = length * 0.5
-            new_count = count + 1
-            rotated_trajectory = rotate_vector(unit_trajectory, angle, degrees = True)
-            recursed_curves = self.create_branched_curves(
-                vsk,
-                Point(start_points[0][i], start_points[1][i]),
-                new_length,
-                rotated_trajectory,
-                new_count,
-                trunk_width * 0.6,
-                control_point_precision * 0.6,
-            )
-            curves = curves + recursed_curves
-        return curves
+            new_length = length * 0.4
+            
+            # One side
+            if left_or_right == "left" or left_or_right == None:
+                angle = start_angle - (i * 5) 
+                self.create_branched_curves(
+                    vsk,
+                    Point(start_points[0][i], start_points[1][i]),
+                    new_length,
+                    rotate_vector(unit_trajectory, angle, degrees = True),
+                    count + 1,
+                    no_noise_curve.length * 0.08,
+                    control_point_precision * 0.6,
+                    left_or_right = 'left',
+                    start_angle = start_angle + 20
+                )
+
+
+            # Other side
+            # The left_or_right ensures that veins are only drawn on the 
+            # underside of the vein
+            if left_or_right == "right" or left_or_right == None:
+                angle = -1 * start_angle + (i * 5) 
+                self.create_branched_curves(
+                    vsk,
+                    Point(start_points[0][i], start_points[1][i]),
+                    new_length,
+                    rotate_vector(unit_trajectory, angle, degrees = True),
+                    count + 1,
+                    no_noise_curve.length * 0.08,
+                    control_point_precision * 0.6,
+                    left_or_right = 'right',
+                    start_angle = start_angle + 20
+                )
 
    
 def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
@@ -194,7 +254,8 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
 
     vsk.stroke(1)
 
-    for vein in leaf.veins:
+    for vein in leaf.curves:
+        vsk.strokeWeight(max(1, weight - 2))
         draw_cubic_bezier(vsk, vein)
         
     # combined = leaf.left_veins + leaf.right_veins
@@ -205,8 +266,7 @@ def draw_leaf(vsk: vsketch.Vsketch, leaf: Leaf, weight: int = 1):
     #         vsk.strokeWeight(weight)
     #     draw_cubic_bezier(vsk, vein.curve)
 
-    vsk.strokeWeight(weight)
-
+    # vsk.strokeWeight(weight)
     # vsk.line(
     #     leaf.base.x, leaf.base.y, leaf.base.x, leaf.base.y - leaf.length)
 
