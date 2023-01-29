@@ -135,7 +135,7 @@ class Leaf():
         left_or_right: Optional[str] = None,
         start_angle: float = 30.0
     ):
-        if count > 3:
+        if count > 1:
             return 
 
         # Draw the curve as described by the given parameters 
@@ -205,7 +205,7 @@ class Leaf():
         # indices = random_n_elements_across_k_partitions(points[0], 3, 4)
         partitions = partition_list([i for i in range(len(points[0]) - 1)], 12)
         # Pick starting points from partition 2, 3, 5
-        indices = [choice(partition) for partition in partitions[0:9:1]]
+        indices = [choice(partition) for partition in partitions[0:9:2]]
         start_points = [points[0][indices], points[1][indices]]
 
         for i in range(len(start_points[0])):
@@ -224,7 +224,7 @@ class Leaf():
                     no_noise_curve.length * 0.08,
                     control_point_precision * 0.6,
                     left_or_right = 'left',
-                    start_angle = start_angle + 20
+                    start_angle = start_angle + 10
                 )
 
 
@@ -242,7 +242,7 @@ class Leaf():
                     no_noise_curve.length * 0.08,
                     control_point_precision * 0.6,
                     left_or_right = 'right',
-                    start_angle = start_angle + 20
+                    start_angle = start_angle + 10
                 )
 
    
