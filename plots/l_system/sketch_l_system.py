@@ -1,7 +1,25 @@
+import numpy as np
+from collections import deque
 from lib.point_utils import add
 from lib.vector import Vector, rotate_vector
+import random
 import vsketch
+from typing import Tuple
 from vsketch.shape import Point
+
+class AnglePicker():
+    def __init__(self, angle: float):
+        self._angle = angle
+
+    def angle(self) -> float:
+        return self._angle
+
+class RangeAnglePicker(AnglePicker):
+    def __init__(self, angle_range: Tuple):
+        self._range = angle_range
+
+    def angle(self) -> float:
+        return random.uniform(self._range[0], self._range[1])
 
 class LSystemSketch(vsketch.SketchClass):
     # Sketch parameters:
@@ -11,8 +29,19 @@ class LSystemSketch(vsketch.SketchClass):
         vsk.size("9in", "11in", landscape=True)
         vsk.scale("in")
 
-        system = LSystem(axiom="F", rules={"F": "FF+F-FF+FF"}, iterations=4)
-        draw_l_system(vsk, system, 60, 0.05, Point(0, 0))
+        # system = LSystem(axiom="F", rules={"F": "FF+F-FF+FF"}, iterations=4)
+        # draw_l_system(vsk, system, 60, 0.05, Point(0, 0))
+        
+        # Moving tree
+        # system = LSystem(axiom="F+F", rules={"F": "FF[-FF][+F]"}, iterations=4)
+        # draw_l_system(vsk, system, AnglePicker(30), 0.05, Point(0, 0), -90)
+
+        # Stochastic moving tree
+        # system = LSystem(axiom="F+F", rules={"F": "FF[-FFF][+F]"}, iterations=4)
+        # draw_l_system(vsk, system, RangeAnglePicker((30, 45)), 0.05, Point(0, 0), -90)
+
+        system = LSystem(axiom="F", rules={"F": "FF[-FF][+FF]"}, iterations=4)
+        draw_l_system(vsk, system, RangeAnglePicker((0, 180)), 0.1, Point(0, 0), -90)
 
         # implement your sketch here
         # vsk.circle(0, 0, self.radius, mode="radius")
@@ -21,12 +50,14 @@ class LSystemSketch(vsketch.SketchClass):
         vsk.vpype("linemerge linesimplify reloop linesort")
 
 
+
 class LSystem():
     def __init__(self, axiom="F", rules={"F": "F+F-F-F+F"}, iterations=2):
         self.axiom = axiom
         self.rules = rules
         self.iterations = iterations
         self.output = self.evaluate_production_rules()
+        print(self.output)
 
 
     def evaluate_production_rules(self) -> str:
@@ -42,8 +73,16 @@ class LSystem():
         return output
 
 
-def draw_l_system(vsk: vsketch.Vsketch, l_system: LSystem, angle: float, length: float, start: Point):
-    current_vector = Vector.from_two_points(start, Point(start.x + length, start.y + length))
+def draw_l_system(
+    vsk: vsketch.Vsketch,
+    l_system: LSystem,
+    angle_picker: AnglePicker,
+    length: float,
+    start: Point,
+    starting_angle: float = 90,
+):
+    stack = deque()
+    current_vector = Vector.from_length_and_angle(length, np.radians(starting_angle))
     current_position = start
     current_angle = 0 
     for char in l_system.evaluate_production_rules():
@@ -56,9 +95,16 @@ def draw_l_system(vsk: vsketch.Vsketch, l_system: LSystem, angle: float, length:
             current_position = end_position 
             current_angle = 0
         elif char == "+":
-           current_angle += angle
+           current_angle += angle_picker.angle()
         elif char == "-":
-            current_angle -= angle
+            current_angle -= angle_picker.angle()
+        elif char == "[":
+            stack.append((current_vector, current_position, current_angle))
+        elif char == "]":
+            current_vector, current_position, current_angle = stack.pop()
+        print(f"char: {char}, current_pos: {current_position}, current_angle: {current_angle}")
+
+
 
 if __name__ == "__main__":
     LSystemSketch.display()
