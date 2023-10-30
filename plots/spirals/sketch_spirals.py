@@ -8,7 +8,6 @@ from shapely.affinity import scale
 from lib.grid import Grid
 from lib.spiral import Spiral
 
-
 class SpiralsSketch(vsketch.SketchClass):
     # Sketch parameters:
     border = vsketch.Param(3.0)
@@ -61,7 +60,7 @@ class SpiralsSketch(vsketch.SketchClass):
         spiral_noise_density = 500
 
         # TODO: Noise is a little too crazy right now.
-        # Add some noise to the spiral
+        # Add some noise to the spiral by
         x_coords = list(map(lambda v: v.x, spiral_points))
         y_coords = list(map(lambda v: v.y, spiral_points))
 

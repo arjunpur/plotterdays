@@ -1,6 +1,4 @@
 appdirs==1.4.4
-axicli==3.6.0
-axidrawinternal @ file:///private/var/folders/cq/mgwyqn7d59ngb2f13sxdkkxc0000gn/T/pip-req-build-4l_9_xpc/prebuilt_dependencies/axidrawinternal-3.6.0-py2.py3-none-any.whl
 bezier==2021.2.12
 certifi==2022.9.24
 charset-normalizer==2.1.1

@@ -23,6 +23,10 @@ class Vector:
     def length(self) -> float:
         return float(np.linalg.norm(self.numpy))
 
+    @property
+    def angle(self) -> float:
+        return np.arctan2(self.y, self.x)
+
     # https://stackoverflow.com/questions/44640479/type-annotation-for-classmethod-returning-instance
     @classmethod
     def from_numpy_array(cls, np_array: np.ndarray) -> Vector:
@@ -32,6 +36,10 @@ class Vector:
     @classmethod
     def from_two_points(cls, p1: Point, p2: Point) -> Vector:
         return Vector(p2.x - p1.x, p2.y - p1.y)
+
+    @classmethod
+    def from_length_and_angle(cls, length: float, angle_in_radians: float) -> Vector:
+        return Vector(cos(angle_in_radians), sin(angle_in_radians)) * length
 
     def to_line_string(self, start_point: Point) -> LineString:
         end_point = Point(start_point.x + self.x, start_point.y + self.y)
@@ -72,6 +80,13 @@ class Vector:
     def dot_product(self, other: Vector) -> float:
         return np.dot(self.numpy, other.numpy)
 
+    def perturbate(self, range_in_radians: (float, float)) -> Vector:
+        """
+        perturbate the vector by a random amount within the given range
+        """
+        perturbated_angle = np.random.uniform(range_in_radians[0], range_in_radians[1])
+        return Vector.from_length_and_angle(self.length, self.angle + perturbated_angle)
+
     def scale(self, x, y) -> Vector:
         self.x *= x 
         self.y *= y 
@@ -99,6 +114,10 @@ def rotate_vector(
     theta: float,
     degrees: bool = False,
 ) -> Vector:
+    """
+
+    @rtype: object
+    """
     angle_radians = theta
     if degrees:
         angle_radians = np.radians(theta)

@@ -1,5 +1,5 @@
 from typing import Sequence
-from plotterdays.lib.coordinates import pol2cart
+from lib.coordinates import pol2cart
 from shapely.geometry import Point
 
 
@@ -37,6 +37,10 @@ class Spiral:
         temp_theta = self.start_theta
         temp_radius = self.start_radius
 
+        # Radius is updated by taking the starting radius of the circle and then
+        # increasing it by a factor of `space_per_loop` scaled by the theta.
+        # Scaling by the theta (which is incremented gradually) represents moving a point
+        # in a circle at slowly increasing distances in polar coordinates
         r = a + (b * temp_theta)
         start_point = calculate_x_y(r, temp_theta)
         spiral_points = [start_point]
