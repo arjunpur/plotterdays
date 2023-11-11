@@ -9,6 +9,31 @@ from typing import List
 from shapely import Point
 
 
+# 10/29
+# - Currently the space filling algorithm initializes nodes and then creates new nodes from those initial nodes
+#   by taking the direction of travel, perturbating it, and creating new nodes on the perimeter untill we reach the boundary
+# Next steps
+# - Create a collision detection algorithm to ensure no new nodes overlap with any existing ones (attempt to implement this with matrix multiplication / vectorization)
+# - Implement a branching algorithm (reducing the width, increasing the pertubation range)
+# - Ensure that we are space filling well
+# TODO: There's a bug where the next_node's aren't completely non-intersecting (THE MATH IS WRONG!!!!!!!!!!!!!!)
+
+
+# Space Branch-Fill Algorithm
+# - Start with some initial nodes within a circle. These nodes are circles with a *radius*, and a *direction of travel*.
+# - We are then going to pick a point on the perimeter of the circle using the *direction of travel* and a
+#   slight angle pertubation (proportional to the *branch level / width* - thicker branches have less sway to them)
+# - Continue doing this untill you get to a point where you cannot create a new circle without overlapping with an existing circle / boundary (with 3 retries of pertubations).
+# - Now to branch, pick a random node and repeat the above process (with a smaller branch width - thus more pertubations)
+# - Keep doing this until most random selections of nodes fail to create a new circle (with 3 retries of pertubations)
+
+
+# Collision Detection
+# Q: How do we detect collisions between circles?
+# Q: How do we even represent the circles?
+#  - I might just be able to represent them as (x, y, radius) tuples instead of using a library like shapely
+#  - I can then use the distance formula to check if the distance between the centers of the circles is less than the sum of the radii
+
 class SpaceFillSketch(vsketch.SketchClass):
     def draw(self, vsk: vsketch.Vsketch) -> None:
         vsk.size("9in", "11in", landscape=True, center=False)
@@ -37,21 +62,6 @@ def draw(vsk: vsketch.Vsketch, bfill: BranchFill):
         vsk.circle(node.circle.x, node.circle.y, node.circle.r * 2.0)
         draw_vector(vsk, node.direction, node.circle.center, draw_tip=True)
 
-
-# Space Branch-Fill Algorithm
-# - Start with some initial nodes within a circle. These nodes are circles with a *radius*, and a *direction of travel*.
-# - We are then going to pick a point on the perimeter of the circle using the *direction of travel* and a
-#   slight angle pertubation (proportional to the *branch level / width* - thicker branches have less sway to them)
-# - Continue doing this untill you get to a point where you cannot create a new circle without overlapping with an existing circle / boundary (with 3 retries of pertubations).
-# - Now to branch, pick a random node and repeat the above process (with a smaller branch width - thus more pertubations)
-# - Keep doing this until most random selections of nodes fail to create a new circle (with 3 retries of pertubations)
-
-
-# Collision Detection
-# Q: How do we detect collisions between circles?
-# Q: How do we even represent the circles?
-#  - I might just be able to represent them as (x, y, radius) tuples instead of using a library like shapely
-#  - I can then use the distance formula to check if the distance between the centers of the circles is less than the sum of the radii
 
 class Circle:
     def __init__(self, x, y, r):
@@ -161,10 +171,15 @@ class BranchFill:
             # Using the current nodes center and direction, perturbate the angle a little bit
             # and find a point on the perimeter of the circle. This will be the tangent point
             # where the new node's circle will intersect with the current node.
+            #
+            # First perturbate to find the tangent point
             direction_perturbated = current_node.direction.perturbate(pertubation_range)
             tangent_point = add(current_node.circle.center, direction_perturbated)
+
+            # Second, scale down the new radius, and find the new center
             radius = current_node.circle.r * self.NEXT_NODE_RADIUS_REDUCTION_PCT
-            center = add(tangent_point, direction_perturbated * radius)
+            new_direction = direction_perturbated.normalize() * radius
+            center = add(tangent_point, new_direction)
             circle = Circle(center.x, center.y, radius)
 
             # If the new circle is out of the boundary, allow for some retries with pertubations, but
@@ -176,7 +191,7 @@ class BranchFill:
                 continue
 
             # Register the new node
-            new_node = Node(circle, direction_perturbated)
+            new_node = Node(circle, new_direction)
             new_nodes.append(new_node)
             current_node = new_node
         return new_nodes
