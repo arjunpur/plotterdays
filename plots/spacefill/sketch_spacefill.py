@@ -7,6 +7,7 @@ import uuid
 import vsketch
 import numpy as np
 import random
+from abc import ABC, abstractmethod
 from lib.vector import Vector, draw_vector
 from lib.grid import create_grid_with_padding, draw_grid
 from lib.point_utils import add
@@ -19,6 +20,7 @@ from collections import Counter
 # TODO: need a better solution for this
 NODE_ID_INCREMENT = 0
 
+
 # 11/24
 # - I'm trying to implement a better space filling algorithm. Specifically the one that's found here: https://inconvergent.net/generative/hyphae/
 # - My current algorithm is essentially iterating from 0 to the # of branches I want (5000, for example) and then using a "node picking algorithm"
@@ -29,13 +31,17 @@ NODE_ID_INCREMENT = 0
 #
 # Some changes I should make:
 # P0:
+# Recurse branches
+# - As I'm extending a branch, I should allow it to branch off and then recurse from there on.
+#       - I tried breadth first branching but that didn't work out so well. I ended up just having a bunch of square branches.
 # Track density
 # - Find a way to track space density in the boundary. I can do this by creating a grid and then tracking the number of nodes that fall within each grid
 # - Make `Density` should be a variable. I should not fill a cell in the grid if it's above a particular density.
-# Recurse branches
-# - As I'm extending a branch, I should allow it to branch off and then recurse from there on.
 # Algorithm to seek empty space
 # - I need to have a way for the branch seeking algorithm to seek empty space - almost get attracted to empty space
+# Variations as we branch more
+# - The smaller branches vary in angle a lot more
+# - The thicker branches are more straight
 
 # 11/19
 # - Tried to implement an algorithm to better distribute the nodes
@@ -116,7 +122,8 @@ class SpaceFillSketch(vsketch.SketchClass):
         max_circle_radius = min(abs(grid.right - center.x), abs(grid.top - center.y))
 
         self.timer = Timer()
-        bfill = BranchFill(Circle(center.x, center.y, max_circle_radius), self.timer)
+        boundary = CircleBoundary(Circle(center.x, center.y, max_circle_radius))
+        bfill = BranchFill(boundary, self.timer)
         bfill.fill()
         self.draw_bfill(vsk, bfill)
         self.timer.summary()
@@ -127,7 +134,7 @@ class SpaceFillSketch(vsketch.SketchClass):
     def draw_bfill(self, vsk: vsketch.Vsketch, bfill: BranchFill):
         start_time = time.time()
         boundary = bfill.boundary
-        vsk.circle(boundary.x, boundary.y, boundary.r * 2.0)
+        bfill.boundary.draw(vsk)
 
         for node in bfill.all.nodes:
             if self.draw_circles:
@@ -319,8 +326,48 @@ class AllNodes:
             return self.node_deque.popleft()
         return self.node_deque.pop()
 
+
+class BoundaryShape(ABC):
+    @abstractmethod
+    def draw(self, vsk: vsketch.Vsketch):
+        pass
+
+    @abstractmethod
+    def contains(self, shapely):
+        pass
+
+    @property
+    @abstractmethod
+    def center(self) -> Point:
+        pass
+
+    @property
+    @abstractmethod
+    def width(self) -> float:
+        pass
+
+
+class CircleBoundary(BoundaryShape):
+    def __init__(self, circle: Circle):
+        self._circle = circle
+
+    def draw(self, vsk: vsketch.Vsketch):
+        vsk.circle(self._circle.x, self._circle.y, self._circle.r * 2.0)
+
+    def contains(self, to_check) -> bool:
+        return self._circle.shapely.contains(to_check)
+
+    @property
+    def center(self) -> Point:
+        return self._circle.center
+
+    @property
+    def width(self) -> float:
+        return self._circle.r * 2.0
+
+
 class BranchFill:
-    def __init__(self, boundary: Circle, timer: Timer = None):
+    def __init__(self, boundary: BoundaryShape, timer: Timer = None):
         # TODO: Make this an abstract class that has the key methods needed for the boundary (ex. is_within)
         # This will allow us to use different shapes as the boundary.
         self.boundary = boundary
@@ -328,8 +375,8 @@ class BranchFill:
         self.timer = timer
         self.all: AllNodes = AllNodes(timer)
         self.NUM_INITIAL_NODES = 3
-        self.INITIAL_NODE_RADIUS_PCT = 0.01
-        self.NEXT_NODE_RADIUS_REDUCTION_PCT = 0.99
+        self.INITIAL_NODE_RADIUS_PCT = 0.005
+        self.NEXT_NODE_RADIUS_REDUCTION_PCT = 0.995
         self.NEXT_NODE_CROSS_BOUNDARY_RETRIES = 3
         self.MIN_NODE_RADIUS_THRESHOLD_INCHES = 0.005
         self.FAILED_BRANCH_RETRIES = 3
@@ -337,8 +384,9 @@ class BranchFill:
     def fill(self):
         start_time = time.time()
         self.initial_nodes = self.select_initial_nodes()
+        initial_pertubation = (np.deg2rad(-15.0), np.deg2rad(15.0))
+
         for node in self.initial_nodes:
-            initial_pertubation = (np.deg2rad(-15.0), np.deg2rad(15.0))
             self.all.extend(self.begin_fill_from_node(node, node.direction, initial_pertubation))
             self.all.append(node)
 
@@ -346,36 +394,36 @@ class BranchFill:
         # Randomly pick nodes from self.all.nodes, pick an angle that's perpendicular (with some perturbation)
         # to the direction of the original node's travel, and then continue filling but with a tighter radius,
         # and a larger perturbation range.
-        NUM_BRANCH_STARTS = 0
-        for i in range(NUM_BRANCH_STARTS):
-            retries = 0
-            # Randomly pick a node, and a direction that's perpendicular to the node's direction. Perturbate the
-            # direction a bit
-            node = self.all.pick_last()
-            while retries < self.FAILED_BRANCH_RETRIES:
-                # Chose the direction to branch and create the branching node
-                clockwise = np.random.choice([True, False])
-                direction_to_branch = node.direction.normalize().get_perpendicular(clockwise=clockwise)
+        # self.pick_random_branches_and_fill(initial_pertubation)
 
-                # Begin a fill from this node
-                branch_nodes = self.begin_fill_from_node(node, direction_to_branch, initial_pertubation)
-                if len(branch_nodes) == 0:
-                    retries += 1
-                    continue
-
-                self.all.extend(branch_nodes)
-                break
-
+        seed_nodes = [self.all.pick_randomly() for _ in range(50)]
+        self.breadth_first_branching(seed_nodes, initial_pertubation)
         self.timer.log("fill", (time.time() - start_time))
 
-    def begin_fill_from_node(self, node: Node, initial_direction: Vector, pertubation_range: (float, float)) -> List[
-        Node]:
+    def pick_random_branches_and_fill(self, initial_pertubation: (float, float)):
+        # TODO: Change this to loop while the boundary shape has not been filled to the density that we require
+        NUM_BRANCH_STARTS = 3
+        for i in range(NUM_BRANCH_STARTS):
+            # Randomly pick a node, and a direction that's perpendicular to the node's direction. Perturbate the
+            # direction a bit
+            node = self.all.pick_randomly()
+            # Chose the direction to branch and create the branching node
+            clockwise = np.random.choice([True, False])
+            direction_to_branch = node.direction.normalize().get_perpendicular(clockwise=clockwise)
+
+            # Begin a fill from this node
+            branch_nodes = self.begin_fill_from_node(node, direction_to_branch, initial_pertubation)
+
+            self.all.extend(branch_nodes)
+
+    def begin_fill_from_node(self, node: Node, initial_direction: Vector, pertubation_range: (float, float)) -> List[Node]:
         """
         Starts from a node's center and uses the direction to repeatedly create new nodes till it
         reaches the boundary and cannot create more nodes (with 3 retries of pertubations).
         Each new node is created by pertubating the angle of the direction vector and finding a point
         on the perimeter of the node's circle. This point is then used to create a new circle with a
         smaller radius such that the point is a tangent to the older node.
+        @param initial_direction:
         @param node:
         @param pertubation_range:
         @return:
@@ -399,7 +447,7 @@ class BranchFill:
 
             # If the new circle is out of the boundary, allow for some retries with pertubations, but
             # eventually give up and return.
-            if not new_node.is_within(self.boundary) or self.all.does_intersect(new_node):
+            if not self.boundary.contains(new_node.circle.shapely) or self.all.does_intersect(new_node):
                 if retries > self.NEXT_NODE_CROSS_BOUNDARY_RETRIES:
                     break
                 retries += 1
@@ -416,14 +464,61 @@ class BranchFill:
         self.timer.log("begin_fill_from_node", (time.time() - start_time))
         return new_nodes
 
+    def breadth_first_branching(self, seed_nodes: List[Node], perturbation_range: (float, float)) -> List[Node]:
+        # TODO: The algorithm for choosing when to branch is not good.
+        # What's happening right now is that as you increase the probability of branching, you get more square branches because
+        # we're just taking the perpendicular of the current direction.
+        branch_probability = 0.1
+        queue = collections.deque([])
+        for node in seed_nodes:
+            clockwise = np.random.choice([True, False])
+            direction = node.direction.normalize().get_perpendicular(clockwise=clockwise)
+            direction_pertubated = direction.perturbate(perturbation_range)
+            next_branch_level = node.branch_level + 1
+            new_node = Node.from_previous_node(node, direction_pertubated,
+                                           scale_radius_down_by=self.NEXT_NODE_RADIUS_REDUCTION_PCT,
+                                           branch_level=next_branch_level)
+            self.all.append(new_node)
+            queue.append(new_node)
+
+        while True:
+            next_frontier = []
+            while len(queue) > 0:
+                node = queue.pop()
+                next_branch_level = node.branch_level + 1
+                clockwise = np.random.choice([True, False])
+                if np.random.rand() <= branch_probability:
+                    direction = node.direction.normalize().get_perpendicular(clockwise=clockwise)
+                else:
+                    direction = node.direction
+
+                direction_pertubated = direction.perturbate(perturbation_range)
+                new_node = Node.from_previous_node(node, direction_pertubated,
+                                                   scale_radius_down_by=self.NEXT_NODE_RADIUS_REDUCTION_PCT,
+                                                   branch_level=next_branch_level)
+
+                if not self.boundary.contains(new_node.circle.shapely) or self.all.does_intersect(new_node):
+                    continue
+
+                next_frontier.append(new_node)
+
+            if len(next_frontier) == 0:
+                break
+
+            queue.extend(next_frontier)
+            self.all.extend(next_frontier)
+
     def select_initial_nodes(self) -> List[Node]:
         """
         Selects the initial nodes from an inner circle defined by `self.INITIAL_NODE_RADIUS_PCT * self.boundary.r`. Randomly selects
         the points in the circles, and directions for the nodes to travel in
         """
         start = time.time()
-        inner_circle = Circle(self.boundary.x, self.boundary.y, self.boundary.r * 0.4)
-        initial_node_radius = self.boundary.r * self.INITIAL_NODE_RADIUS_PCT
+
+        boundary_center = self.boundary.center
+        boundary_width = self.boundary.width
+        inner_circle = Circle(boundary_center.x, boundary_center.y, boundary_width * 0.2)
+        initial_node_radius = boundary_width * self.INITIAL_NODE_RADIUS_PCT
 
         random_circles_within = inner_circle.random_circles_within(initial_node_radius, self.NUM_INITIAL_NODES)
 
