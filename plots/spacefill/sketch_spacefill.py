@@ -133,16 +133,14 @@ class SpaceFillSketch(vsketch.SketchClass):
 
     def draw_bfill(self, vsk: vsketch.Vsketch, bfill: BranchFill):
         start_time = time.time()
-        boundary = bfill.boundary
         bfill.boundary.draw(vsk)
 
+        max_branch_level = max([node.branch_level for node in bfill.all.nodes])
         for node in bfill.all.nodes:
-            if self.draw_circles:
-                vsk.circle(node.circle.x, node.circle.y, node.circle.r * 2.0)
-            self.draw_node(vsk, node)
+            self.draw_node(vsk, node, max_branch_level)
         self.timer.log("draw_bfill", (time.time() - start_time))
 
-    def draw_node(self, vsk: vsketch.Vsketch, node: Node):
+    def draw_node(self, vsk: vsketch.Vsketch, node: Node, max_branch_level: int):
         if self.draw_circles:
             vsk.circle(node.circle.x, node.circle.y, node.circle.r * 2.0)
 
@@ -151,6 +149,11 @@ class SpaceFillSketch(vsketch.SketchClass):
         # of the circle
         reverse_direction = node.direction.normalize() * -1.0 * node.circle.r
         start_point = add(node.circle.center, reverse_direction)
+
+        increment = max(max_branch_level - node.branch_level, 3)
+        vsk.penWidth("0.1mm")
+        vsk.strokeWeight(1 + increment)
+
         draw_vector(vsk, node.direction * 2.0, start_point, draw_tip=self.draw_vector_tips)
 
 
@@ -320,11 +323,11 @@ class AllNodes:
     def pick_randomly(self) -> Node:
         return np.random.choice(self.nodes)
 
-    def pick_last(self) -> Node:
-        isLeft = np.random.choice([True, False])
-        if isLeft:
-            return self.node_deque.popleft()
-        return self.node_deque.pop()
+    def pick_randomly_at_level(self, level: int) -> Node:
+        nodes_at_level = [node for node in self.nodes if node.branch_level == level]
+        if len(nodes_at_level) == 0:
+            raise Exception(f"No nodes at level {level}")
+        return np.random.choice(nodes_at_level)
 
 
 class BoundaryShape(ABC):
@@ -375,11 +378,14 @@ class BranchFill:
         self.timer = timer
         self.all: AllNodes = AllNodes(timer)
         self.NUM_INITIAL_NODES = 3
-        self.INITIAL_NODE_RADIUS_PCT = 0.005
-        self.NEXT_NODE_RADIUS_REDUCTION_PCT = 0.995
+        self.INITIAL_NODE_RADIUS_PCT = 0.003
+        self.NEXT_NODE_RADIUS_REDUCTION_PCT = 0.996
         self.NEXT_NODE_CROSS_BOUNDARY_RETRIES = 3
-        self.MIN_NODE_RADIUS_THRESHOLD_INCHES = 0.005
+        self.MIN_NODE_RADIUS_THRESHOLD_INCHES = 0.001
         self.FAILED_BRANCH_RETRIES = 3
+        self.NUM_BRANCHES_BY_LEVEL = {
+            i: (7 * (i+1))**2 for i in range(1, 5)
+        }
 
     def fill(self):
         start_time = time.time()
@@ -396,13 +402,13 @@ class BranchFill:
         # and a larger perturbation range.
         # self.pick_random_branches_and_fill(initial_pertubation)
 
-        seed_nodes = [self.all.pick_randomly() for _ in range(50)]
-        self.breadth_first_branching(seed_nodes, initial_pertubation)
+        self.pick_random_branches_and_fill_spread_by_level(initial_pertubation)
+
         self.timer.log("fill", (time.time() - start_time))
 
     def pick_random_branches_and_fill(self, initial_pertubation: (float, float)):
         # TODO: Change this to loop while the boundary shape has not been filled to the density that we require
-        NUM_BRANCH_STARTS = 3
+        NUM_BRANCH_STARTS = 3000
         for i in range(NUM_BRANCH_STARTS):
             # Randomly pick a node, and a direction that's perpendicular to the node's direction. Perturbate the
             # direction a bit
@@ -415,6 +421,30 @@ class BranchFill:
             branch_nodes = self.begin_fill_from_node(node, direction_to_branch, initial_pertubation)
 
             self.all.extend(branch_nodes)
+
+    def pick_random_branches_and_fill_spread_by_level(self, initial_pertubation: (float, float)):
+        while sum(self.NUM_BRANCHES_BY_LEVEL.values()) > 0:
+            for i, num in self.NUM_BRANCHES_BY_LEVEL.items():
+                if num == 0:
+                    continue
+                # Randomly pick a node, and a direction that's perpendicular to the node's direction. Perturbate the
+                # direction a bit
+                try:
+                    node = self.all.pick_randomly_at_level(i)
+                    # Chose the direction to branch and create the branching node
+                    clockwise = np.random.choice([True, False])
+                    direction_to_branch = node.direction.normalize().get_perpendicular(clockwise=clockwise)
+
+                    # Begin a fill from this node
+                    branch_nodes = self.begin_fill_from_node(node, direction_to_branch, initial_pertubation)
+                    self.all.extend(branch_nodes)
+                except Exception as e:
+                    print(e)
+                    continue
+                finally:
+                    self.NUM_BRANCHES_BY_LEVEL[i] -= 1
+
+
 
     def begin_fill_from_node(self, node: Node, initial_direction: Vector, pertubation_range: (float, float)) -> List[Node]:
         """
@@ -463,50 +493,6 @@ class BranchFill:
             current_direction = direction_pertubated
         self.timer.log("begin_fill_from_node", (time.time() - start_time))
         return new_nodes
-
-    def breadth_first_branching(self, seed_nodes: List[Node], perturbation_range: (float, float)) -> List[Node]:
-        # TODO: The algorithm for choosing when to branch is not good.
-        # What's happening right now is that as you increase the probability of branching, you get more square branches because
-        # we're just taking the perpendicular of the current direction.
-        branch_probability = 0.1
-        queue = collections.deque([])
-        for node in seed_nodes:
-            clockwise = np.random.choice([True, False])
-            direction = node.direction.normalize().get_perpendicular(clockwise=clockwise)
-            direction_pertubated = direction.perturbate(perturbation_range)
-            next_branch_level = node.branch_level + 1
-            new_node = Node.from_previous_node(node, direction_pertubated,
-                                           scale_radius_down_by=self.NEXT_NODE_RADIUS_REDUCTION_PCT,
-                                           branch_level=next_branch_level)
-            self.all.append(new_node)
-            queue.append(new_node)
-
-        while True:
-            next_frontier = []
-            while len(queue) > 0:
-                node = queue.pop()
-                next_branch_level = node.branch_level + 1
-                clockwise = np.random.choice([True, False])
-                if np.random.rand() <= branch_probability:
-                    direction = node.direction.normalize().get_perpendicular(clockwise=clockwise)
-                else:
-                    direction = node.direction
-
-                direction_pertubated = direction.perturbate(perturbation_range)
-                new_node = Node.from_previous_node(node, direction_pertubated,
-                                                   scale_radius_down_by=self.NEXT_NODE_RADIUS_REDUCTION_PCT,
-                                                   branch_level=next_branch_level)
-
-                if not self.boundary.contains(new_node.circle.shapely) or self.all.does_intersect(new_node):
-                    continue
-
-                next_frontier.append(new_node)
-
-            if len(next_frontier) == 0:
-                break
-
-            queue.extend(next_frontier)
-            self.all.extend(next_frontier)
 
     def select_initial_nodes(self) -> List[Node]:
         """
